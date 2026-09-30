@@ -1,4 +1,6 @@
-# Agent Orchestrator Kit
+# 24x7ai
+
+1 harness, 1 vps, 1 .sh
 
 An npm package for turning a user-provided ideas CSV into project folders, running an MVP coding agent, and periodically discovering and starting ongoing project workers.
 
@@ -7,7 +9,7 @@ An npm package for turning a user-provided ideas CSV into project folders, runni
 On a Linux or macOS host with Node.js 18+, bash, Python 3, Git, curl, `flock`, and a cron service:
 
 ```sh
-npx agent-orchestrator init
+npx 24x7ai init
 ```
 
 The guided setup asks for the projects folder, CSV URL or local CSV, coding agent executable and mode, optional GitHub owner, and both schedules. It creates `run-agent.sh`, `run-sub-agents.sh`, configuration and state, then offers to install both cron entries. Google Sheets edit links are converted to CSV export URLs. Existing queue state is kept if setup is run again. No credentials or idea source are embedded in the package.
@@ -17,13 +19,13 @@ CSV needs a header row. Common columns include `Sl No`, `Idea`, and `Agent Autom
 ## Commands
 
 ```sh
-npx agent-orchestrator init
-npx agent-orchestrator run ~/projects
-npx agent-orchestrator supervise ~/projects
-npx agent-orchestrator status ~/projects
-npx agent-orchestrator set-ideas ~/projects ~/projects/ideas.csv
-npx agent-orchestrator logs ~/projects master.log
-npx agent-orchestrator cron ~/projects '0 * * * *' '*/15 * * * *'
+npx 24x7ai init
+npx 24x7ai run ~/projects
+npx 24x7ai supervise ~/projects
+npx 24x7ai status ~/projects
+npx 24x7ai set-ideas ~/projects ~/projects/ideas.csv
+npx 24x7ai logs ~/projects master.log
+npx 24x7ai cron ~/projects '0 * * * *' '*/15 * * * *'
 ```
 
 The master worker creates or continues one MVP at a time. Existing active MVPs stay selected until `.agent-status.json` says `mvp_complete: true`. The supervisor discovers `run-sub-agent.sh` files under project folders; each child takes its own `flock` lock outside its Git repository. A child marked `development_complete: true` is skipped. Child improvements are committed on `dev`; they are pushed when a GitHub owner is configured and an `origin` remote exists.

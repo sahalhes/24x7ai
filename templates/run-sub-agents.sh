@@ -2,7 +2,7 @@
 set -Eeuo pipefail
 ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 CONFIG="$ROOT/.agent-orchestrator.env"
-[[ -f "$CONFIG" ]] || { echo "Missing $CONFIG. Run npx agent-orchestrator init." >&2; exit 1; }
+[[ -f "$CONFIG" ]] || { echo "Missing $CONFIG. Run npx 24x7ai init." >&2; exit 1; }
 source "$CONFIG"
 ORCH="$ROOT/.agent-orchestrator"
 mkdir -p "$ORCH/logs"

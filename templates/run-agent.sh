@@ -7,7 +7,7 @@ ORCH="$ROOT/.agent-orchestrator"
 STATE="$ORCH/state.json"
 LOG="$ORCH/logs/master.log"
 LOCK="$ORCH/master.lock"
-[[ -f "$CONFIG" ]] || { echo "Missing $CONFIG. Run npx agent-orchestrator init." >&2; exit 1; }
+[[ -f "$CONFIG" ]] || { echo "Missing $CONFIG. Run npx 24x7ai init." >&2; exit 1; }
 source "$CONFIG"
 read -r -a AGENT_ARGS_ARRAY <<< "${AGENT_ARGS:-}"
 mkdir -p "$ORCH/logs"

@@ -1,10 +1,28 @@
 {
-  "name": "agent-orchestrator",
-  "version": "0.1.0",
-  "description": "Run an idea-driven coding agent and supervise continuous development across project folders.",
+  "name": "24x7ai",
+  "version": "1.0.1",
+  "description": "1 harness, 1 vps, 1 .sh",
+  "main": "./bin/agent-orchestrator.js",
+  "bin": {
+    "24x7ai": "bin/24x7ai.js"
+  },
+  "scripts": {
+    "start": "node ./bin/agent-orchestrator.js",
+    "check": "node --check ./bin/agent-orchestrator.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "Apache-2.0",
   "type": "module",
-  "bin": { "agent-orchestrator": "./bin/agent-orchestrator.js" },
-  "scripts": { "start": "node ./bin/agent-orchestrator.js", "check": "node --check ./bin/agent-orchestrator.js" },
-  "engines": { "node": ">=18" },
-  "license": "MIT"
+  "engines": {
+    "node": ">=18"
+  },
+  "files": [
+    "bin/24x7ai.js",
+    "bin/agent-orchestrator.js",
+    "templates/",
+    "README.md",
+    "ideas.example.csv",
+    "LICENSE"
+  ]
 }

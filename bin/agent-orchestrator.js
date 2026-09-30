@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import fs from 'node:fs';
 import os from 'node:os';
-import path from 'node:path';
+import path from 'node:panpth';
 import { spawnSync } from 'node:child_process';
 import readline from 'node:readline/promises';
 import { stdin as input, stdout as output } from 'node:process';
@@ -29,7 +29,7 @@ function run(command, argv, options = {}) {
 }
 function readConfig(root) {
   const f = configPath(root);
-  if (!fs.existsSync(f)) throw new Error(`No setup found at ${f}. Run: npx agent-orchestrator init`);
+  if (!fs.existsSync(f)) throw new Error(`No setup found at ${f}. Run: npx 24x7ai init`);
   const result = {};
   for (const line of fs.readFileSync(f, 'utf8').split(/\r?\n/)) {
     const match = line.match(/^([A-Z][A-Z0-9_]*)=(.*)$/);
@@ -124,7 +124,7 @@ function logs() {
 function setIdeas() {
   const root = path.resolve(args[1] || process.cwd());
   const csv = path.resolve(args[2] || '');
-  if (!args[2]) throw new Error('Usage: agent-orchestrator set-ideas <projects-dir> <csv-file>');
+  if (!args[2]) throw new Error('Usage: 24x7ai set-ideas <projects-dir> <csv-file>');
   if (!fs.existsSync(csv) || !fs.statSync(csv).isFile()) throw new Error(`CSV file not found: ${csv}`);
   const config = configPath(root);
   if (!fs.existsSync(config)) throw new Error(`No setup found at ${config}. Run init first.`);
@@ -151,7 +151,7 @@ async function main() {
       installCron(root, args[2] || '0 * * * *', args[3] || '*/15 * * * *');
       say(`Installed master and supervisor schedules for ${root}.`);
     } else {
-      say('Agent Orchestrator Kit\n\nCommands:\n  init                  Guided setup, configuration, and cron installation\n  run [projects-dir]    Run the master idea/MVP worker now\n  supervise [dir]       Discover and start project workers now\n  status [projects-dir] Show queue and project status\n  set-ideas <dir> <csv> Use a local CSV as the idea source\n  logs [dir] [name]     Follow a log (master.log by default)\n  cron [dir] [master] [supervisor]  Install/update both cron entries\n\nInstall/use: npx agent-orchestrator init');
+      say('24x7ai\n\nCommands:\n  init                  Guided setup, configuration, and cron installation\n  run [projects-dir]    Run the master idea/MVP worker now\n  supervise [dir]       Discover and start project workers now\n  status [projects-dir] Show queue and project status\n  set-ideas <dir> <csv> Use a local CSV as the idea source\n  logs [dir] [name]     Follow a log (master.log by default)\n  cron [dir] [master] [supervisor]  Install/update both cron entries\n\nInstall/use: npx 24x7ai init');
     }
   } catch (error) { console.error(`Error: ${error.message}`); process.exitCode = 1; }
   finally { ask.close(); }
