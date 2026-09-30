@@ -29,7 +29,7 @@ readarray -t FIELDS < <(python3 -c 'import json,sys; d=json.load(sys.stdin); pri
 SL="${FIELDS[0]}"; IDEA="${FIELDS[1]}"; AUTOMATABLE="${FIELDS[2]}"
 SLUG="$(python3 - "$IDEA" <<'PY'
 import re,sys,unicodedata
-s=unicodedata.normalize('ascii', sys.argv[1]).lower()
+s=unicodedata.normalize('NFKD', sys.argv[1]).encode('ascii', 'ignore').decode().lower()
 s=re.sub(r'[^a-z0-9]+','-',s).strip('-')[:70].strip('-')
 print(s or 'project')
 PY
@@ -64,7 +64,9 @@ ROOT="$(dirname -- "$HERE")"
 source "$ROOT/.agent-orchestrator.env"
 read -r -a AGENT_ARGS_ARRAY <<< "${AGENT_ARGS:-}"
 mkdir -p "$ROOT/.agent-orchestrator/logs"
-exec 9>"$HERE/.agent-worker.lock"
+WORKER_ID="$(python3 -c 'import hashlib,sys; print(hashlib.sha256(sys.argv[1].encode()).hexdigest()[:20])' "$HERE")"
+mkdir -p "$ROOT/.agent-orchestrator/locks"
+exec 9>"$ROOT/.agent-orchestrator/locks/$WORKER_ID.lock"
 flock -n 9 || exit 0
 cd "$HERE"
 LOG="$HERE/agent.log"
@@ -77,6 +79,15 @@ case "${AGENT_PROVIDER:-custom}" in
   custom) "$AGENT_COMMAND" "${AGENT_ARGS_ARRAY[@]}" "$PROMPT" >>"$LOG" 2>&1 ;;
   *) echo "Unsupported AGENT_PROVIDER: $AGENT_PROVIDER" >>"$LOG"; exit 2 ;;
 esac
+[[ -f .agent-status.json ]] || { echo "Worker did not create .agent-status.json" | tee -a "$LOG"; exit 1; }
+python3 -m json.tool .agent-status.json >/dev/null || { echo "Worker created invalid .agent-status.json" | tee -a "$LOG"; exit 1; }
+if [[ -n "$(git status --porcelain)" ]]; then
+  git add -A
+  git commit -m "chore: continuous development update" >>"$LOG" 2>&1
+  if [[ -n "${GITHUB_OWNER:-}" ]] && git remote get-url origin >/dev/null 2>&1; then
+    git push origin dev >>"$LOG" 2>&1
+  fi
+fi
 CHILD
 chmod +x run-sub-agent.sh
 PROMPT="Read AGENTS.md, AUTODEVELOP.md and .project-source.json. Build or continue the smallest genuinely useful working MVP for idea Sl No $SL: $IDEA. Inspect and preserve existing work. Work only in this repository on dev. Implement actual code, document setup and usage, and run relevant local checks. If automation is partial, do not claim manual, hardware, deployment, customer or business validation. Maintain valid .agent-status.json with sl_no, project, status, mvp_complete, development_complete, branch, last_run, next_action and blocked. Set mvp_complete true only when the coding-agent portion is implemented and appropriate local checks pass. Never set development_complete merely because the MVP works. Create/update run-sub-agent.sh for future continuous development. Do not git add, commit, push, create a remote or modify main; the outer orchestrator handles GitHub. Leave implementation changes in the working tree."

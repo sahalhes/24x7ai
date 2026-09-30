@@ -8,7 +8,16 @@ csv_path, state_path = sys.argv[1:3]
 with open(state_path, encoding='utf-8') as stream:
     state = json.load(stream)
 with open(csv_path, newline='', encoding='utf-8-sig') as stream:
-    rows = list(csv.DictReader(stream))
+    reader = csv.DictReader(stream)
+    headers = [header.strip().lower().replace(' ', '_') for header in (reader.fieldnames or [])]
+    rows = list(reader)
+
+if not headers or headers[0].startswith('<!doctype') or headers[0].startswith('<html'):
+    raise SystemExit('CSV source is empty or returned HTML. Use a direct CSV/export URL and ensure it is accessible.')
+if not any(header in headers for header in ('sl_no', 'sl', 'serial_no', 'serial_number', 's_no', 'no')):
+    raise SystemExit(f"CSV is missing a serial-number column. Found headers: {', '.join(headers)}")
+if not any(header in headers for header in ('idea', 'project', 'project_idea', 'name', 'title')):
+    raise SystemExit(f"CSV is missing an idea/project column. Found headers: {', '.join(headers)}")
 
 def get(row, *names, default=''):
     normalized = {key.strip().lower().replace(' ', '_'): (value or '').strip()

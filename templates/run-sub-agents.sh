@@ -27,4 +27,6 @@ PY
   else
     echo "$(date -Is) Skipping completed project: $project" >>"$LOG"
   fi
-done < <(find "$ROOT" -mindepth 2 -maxdepth 2 -type f -name run-sub-agent.sh -print0)
+done < <(find "$ROOT" -mindepth 2 \
+  \( -path "$ORCH" -o -path '*/.git' -o -path '*/node_modules' \) -prune -o \
+  -type f -name run-sub-agent.sh -print0)

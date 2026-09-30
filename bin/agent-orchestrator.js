@@ -38,8 +38,8 @@ function readConfig(root) {
   return result;
 }
 function installCron(root, masterSchedule, supervisorSchedule) {
-  const master = `${masterSchedule} ${shellQuote(path.join(root, 'run-agent.sh'))} >> ${shellQuote(path.join(root, 'orchestrator/logs/master-cron.log'))} 2>&1`;
-  const supervisor = `${supervisorSchedule} ${shellQuote(path.join(root, 'run-sub-agents.sh'))} >> ${shellQuote(path.join(root, 'orchestrator/logs/supervisor-cron.log'))} 2>&1`;
+  const master = `${masterSchedule} ${shellQuote(path.join(root, 'run-agent.sh'))} >> ${shellQuote(path.join(root, '.agent-orchestrator/logs/master-cron.log'))} 2>&1`;
+  const supervisor = `${supervisorSchedule} ${shellQuote(path.join(root, 'run-sub-agents.sh'))} >> ${shellQuote(path.join(root, '.agent-orchestrator/logs/supervisor-cron.log'))} 2>&1`;
   const existing = spawnSync('crontab', ['-l'], { encoding: 'utf8' });
   const lines = (existing.stdout || '').split(/\r?\n/).filter(line => !line.includes(cronTag) && line.trim());
   lines.push(`${master} ${cronTag} master`, `${supervisor} ${cronTag} supervisor`);
@@ -53,8 +53,13 @@ async function init() {
   const root = path.resolve(await prompt('Projects directory', defaultProjects));
   const sourceType = await prompt('Idea source (csv-url or local-csv)', 'csv-url');
   if (!['csv-url', 'local-csv'].includes(sourceType)) throw new Error('Choose csv-url or local-csv.');
-  const source = await prompt(sourceType === 'csv-url' ? 'CSV URL (Google Sheets export links work)' : 'CSV file path');
+  let source = await prompt(sourceType === 'csv-url' ? 'CSV URL (Google Sheets links are converted to CSV export URLs)' : 'CSV file path');
   if (!source) throw new Error('An idea source is required.');
+  if (sourceType === 'csv-url' && /docs\.google\.com\/spreadsheets\/d\//.test(source) && /\/edit(?:\?|$)/.test(source)) {
+    const gid = new URL(source).searchParams.get('gid') || '0';
+    source = `${source.split('/edit')[0]}/export?format=csv&gid=${encodeURIComponent(gid)}`;
+    say(`Using CSV export URL: ${source}`);
+  }
   const agentCommand = await prompt('Coding agent executable', 'codex');
   const agentArgs = await prompt('Extra agent arguments (space-separated; leave empty for defaults)', '');
   const provider = await prompt('Agent mode (codex, opencode, claude, custom)', 'codex');
@@ -74,7 +79,8 @@ async function init() {
     `AGENT_COMMAND='${agentCommand.replaceAll("'", "'\\''")}'`, `AGENT_ARGS='${agentArgs.replaceAll("'", "'\\''")}'`,
     `GITHUB_OWNER='${owner.replaceAll("'", "'\\''")}'`, `GITHUB_PRIVATE='${privateRepos ? 'true' : 'false'}'`, ''
   ].join('\n'), { mode: 0o600 });
-  fs.writeFileSync(path.join(templateRoot, 'state.json'), JSON.stringify({ current_sl_no: 1, active_mvp: null, last_completed_mvp: null, last_run: null, projects: {} }, null, 2) + '\n');
+  const statePath = path.join(templateRoot, 'state.json');
+  if (!fs.existsSync(statePath)) fs.writeFileSync(statePath, JSON.stringify({ current_sl_no: 1, active_mvp: null, last_completed_mvp: null, last_run: null, projects: {} }, null, 2) + '\n');
   if (process.platform !== 'win32') {
     fs.chmodSync(path.join(root, 'run-agent.sh'), 0o755);
     fs.chmodSync(path.join(root, 'run-sub-agents.sh'), 0o755);
@@ -115,6 +121,22 @@ function logs() {
   if (!fs.existsSync(file)) throw new Error(`Log not found: ${file}`);
   process.exitCode = run('tail', ['-n', '100', '-f', file]);
 }
+function setIdeas() {
+  const root = path.resolve(args[1] || process.cwd());
+  const csv = path.resolve(args[2] || '');
+  if (!args[2]) throw new Error('Usage: agent-orchestrator set-ideas <projects-dir> <csv-file>');
+  if (!fs.existsSync(csv) || !fs.statSync(csv).isFile()) throw new Error(`CSV file not found: ${csv}`);
+  const config = configPath(root);
+  if (!fs.existsSync(config)) throw new Error(`No setup found at ${config}. Run init first.`);
+  let contents = fs.readFileSync(config, 'utf8');
+  const quote = value => `'${value.replaceAll("'", "'\\''")}'`;
+  contents = contents.replace(/^IDEA_SOURCE_TYPE=.*$/m, "IDEA_SOURCE_TYPE='local-csv'");
+  const encoded = `IDEA_SOURCE=${quote(csv)}`;
+  if (/^IDEA_SOURCE=.*$/m.test(contents)) contents = contents.replace(/^IDEA_SOURCE=.*$/m, encoded);
+  else contents += `${encoded}\n`;
+  fs.writeFileSync(config, contents, { mode: 0o600 });
+  say(`Idea source updated to local CSV: ${csv}`);
+}
 async function main() {
   try {
     if (command === 'init' || command === 'setup') await init();
@@ -122,13 +144,14 @@ async function main() {
     else if (command === 'supervise') cliRun('supervise');
     else if (command === 'status') status();
     else if (command === 'logs') logs();
+    else if (command === 'set-ideas') setIdeas();
     else if (command === 'cron') {
       const root = path.resolve(args[1] || process.cwd());
-      const c = readConfig(root);
+      readConfig(root);
       installCron(root, args[2] || '0 * * * *', args[3] || '*/15 * * * *');
       say(`Installed master and supervisor schedules for ${root}.`);
     } else {
-      say('Agent Orchestrator Kit\n\nCommands:\n  init                  Guided setup, configuration, and cron installation\n  run [projects-dir]    Run the master idea/MVP worker now\n  supervise [dir]       Discover and start project workers now\n  status [projects-dir] Show queue and project status\n  logs [dir] [name]     Follow a log (master.log by default)\n  cron [dir] [master] [supervisor]  Install/update both cron entries\n\nInstall/use: npx agent-orchestrator init');
+      say('Agent Orchestrator Kit\n\nCommands:\n  init                  Guided setup, configuration, and cron installation\n  run [projects-dir]    Run the master idea/MVP worker now\n  supervise [dir]       Discover and start project workers now\n  status [projects-dir] Show queue and project status\n  set-ideas <dir> <csv> Use a local CSV as the idea source\n  logs [dir] [name]     Follow a log (master.log by default)\n  cron [dir] [master] [supervisor]  Install/update both cron entries\n\nInstall/use: npx agent-orchestrator init');
     }
   } catch (error) { console.error(`Error: ${error.message}`); process.exitCode = 1; }
   finally { ask.close(); }
