@@ -3,7 +3,7 @@ var DEFAULT_CONFIG = {
   projectsRoot: process.env.PROJECTS_ROOT || `${process.env.HOME || "/root"}/projects`,
   ideaSourceType: "local-csv",
   ideaSource: "ideas.example.csv",
-  defaultAdapter: "codex",
+  defaultAdapter: "opencode",
   maxParallel: 4,
   daemonSchedule: "*/30 * * * *",
   stuckTimeoutMs: 30 * 60 * 1e3,
@@ -1503,7 +1503,7 @@ var MvpPipeline = class {
       throw new Error("Otari budget cap exceeded");
     }
     const prompt = this.buildMvpPrompt(selected);
-    const adapterName = this.config.defaultAdapter || "codex";
+    const adapterName = this.config.defaultAdapter || "opencode";
     const adapter = this.registry.get(adapterName);
     this.logger.info(`Invoking adapter "${adapter.name}" in ${projectDir}`);
     const runRecord = this.store.startAgentRun({
@@ -1864,7 +1864,7 @@ var DaemonManager = class {
       `Stay on dev. Do not claim external work or tests that were not performed.`,
       `Do not run git push or modify main.`
     ].join(" ");
-    const adapterName = this.config.defaultAdapter || "codex";
+    const adapterName = this.config.defaultAdapter || "opencode";
     const adapter = this.registry.get(adapterName);
     const runRecord = this.store.startAgentRun({
       project_id: project.id,

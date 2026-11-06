@@ -124,7 +124,7 @@ export class MvpPipeline {
     const prompt = this.buildMvpPrompt(selected);
 
     // Get adapter
-    const adapterName = this.config.defaultAdapter || 'codex';
+    const adapterName = this.config.defaultAdapter || 'opencode';
     const adapter = this.registry.get(adapterName);
     this.logger.info(`Invoking adapter "${adapter.name}" in ${projectDir}`);
 

@@ -34,7 +34,7 @@ export const DEFAULT_CONFIG: AppConfig = {
   projectsRoot: process.env.PROJECTS_ROOT || `${process.env.HOME || '/root'}/projects`,
   ideaSourceType: 'local-csv',
   ideaSource: 'ideas.example.csv',
-  defaultAdapter: 'codex',
+  defaultAdapter: 'opencode',
   maxParallel: 4,
   daemonSchedule: '*/30 * * * *',
   stuckTimeoutMs: 30 * 60 * 1000, // 30 minutes

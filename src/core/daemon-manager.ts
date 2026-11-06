@@ -170,7 +170,7 @@ export class DaemonManager {
       `Do not run git push or modify main.`,
     ].join(' ');
 
-    const adapterName = this.config.defaultAdapter || 'codex';
+    const adapterName = this.config.defaultAdapter || 'opencode';
     const adapter = this.registry.get(adapterName);
 
     const runRecord = this.store.startAgentRun({
