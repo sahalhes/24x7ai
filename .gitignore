@@ -3,3 +3,4 @@ node_modules/
 .24x7ai/
 *.log
 .DS_Store
+.env
