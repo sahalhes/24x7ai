@@ -10,12 +10,14 @@ describe('Adapter Registry & Execution', () => {
     const registry = new AdapterRegistry();
     const names = registry.listNames();
 
+    expect(names).toContain('antigravity');
     expect(names).toContain('codex');
     expect(names).toContain('claude-code');
     expect(names).toContain('opencode');
     expect(names).toContain('aider');
     expect(names).toContain('openhands');
     expect(names).toContain('custom');
+    expect(registry.get('agy').name).toBe('antigravity');
   });
 
   it('executes custom adapter successfully', async () => {

@@ -56,13 +56,6 @@ export async function runInit(targetDir?: string): Promise<void> {
       privateRepos = privInput.toLowerCase().startsWith('y');
     }
 
-    // Otari gateway
-    const enableOtari = (await prompt('Enable Otari model gateway proxy? (yes/no)', existingConfig.otari.enabled ? 'yes' : 'no')).toLowerCase().startsWith('y');
-    let otariEndpoint = existingConfig.otari.endpoint;
-    if (enableOtari) {
-      otariEndpoint = await prompt('Otari gateway endpoint', otariEndpoint);
-    }
-
     // Save config
     const updated = saveConfig(projectsRoot, {
       projectsRoot,
@@ -75,10 +68,7 @@ export async function runInit(targetDir?: string): Promise<void> {
         privateRepos,
         autoPush: Boolean(githubOwner),
       },
-      otari: {
-        enabled: enableOtari,
-        endpoint: otariEndpoint,
-      },
+      otari: existingConfig.otari,
     });
 
     console.log(pc.green('\n✓ Configuration saved to: ') + path.join(projectsRoot, '.24x7ai.config.json'));

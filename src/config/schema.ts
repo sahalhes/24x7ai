@@ -46,7 +46,8 @@ export const DEFAULT_CONFIG: AppConfig = {
     issueFilterLabel: 'agent-task',
   },
   otari: {
-    enabled: false,
-    endpoint: 'http://localhost:8000/v1',
+    enabled: true,
+    endpoint: process.env.OTARI_ENDPOINT || 'https://otari.ai/api/v1',
+    apiKey: process.env.OTARI_API_KEY,
   },
 };

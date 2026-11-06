@@ -31,8 +31,9 @@ var DEFAULT_CONFIG = {
     issueFilterLabel: "agent-task"
   },
   otari: {
-    enabled: false,
-    endpoint: "http://localhost:8000/v1"
+    enabled: true,
+    endpoint: process.env.OTARI_ENDPOINT || "https://otari.ai/api/v1",
+    apiKey: process.env.OTARI_API_KEY
   }
 };
 
@@ -108,9 +109,18 @@ function loadConfig(projectsRoot) {
   };
   if (process.env.AGENT_COMMAND) merged.adapterCommand = process.env.AGENT_COMMAND;
   if (process.env.AGENT_PROVIDER) {
-    merged.defaultAdapter = process.env.AGENT_PROVIDER === "claude" ? "claude-code" : process.env.AGENT_PROVIDER;
+    const prov = process.env.AGENT_PROVIDER.toLowerCase();
+    if (prov === "claude") {
+      merged.defaultAdapter = "claude-code";
+    } else if (prov === "agy") {
+      merged.defaultAdapter = "antigravity";
+    } else {
+      merged.defaultAdapter = process.env.AGENT_PROVIDER;
+    }
   }
   if (process.env.GITHUB_OWNER) merged.github.owner = process.env.GITHUB_OWNER;
+  if (process.env.OTARI_API_KEY) merged.otari.apiKey = process.env.OTARI_API_KEY;
+  if (process.env.OTARI_ENDPOINT) merged.otari.endpoint = process.env.OTARI_ENDPOINT;
   return merged;
 }
 function saveConfig(projectsRoot, config) {
@@ -253,7 +263,7 @@ async function loadIdeas(sourceType, source, baseDir) {
   return parseIdeasCsv(content);
 }
 
-// src/adapters/codex.ts
+// src/adapters/antigravity.ts
 import { spawn as spawn2 } from "child_process";
 
 // src/adapters/base.ts
@@ -322,26 +332,21 @@ function readAgentStatusJson(projectDir) {
   }
 }
 
-// src/adapters/codex.ts
-var CodexAdapter = class {
-  name = "codex";
-  description = "OpenAI Codex CLI adapter";
+// src/adapters/antigravity.ts
+var AntigravityAdapter = class {
+  name = "antigravity";
+  description = "Google Antigravity CLI (agy) adapter";
   async detect() {
-    return commandExists("codex");
+    return await commandExists("agy") || await commandExists("antigravity");
   }
   async invoke(opts) {
-    const cmd = opts.commandOverride || "codex";
+    const cmd = opts.commandOverride || (await commandExists("agy") ? "agy" : "antigravity");
     const beforeHead = await getHeadCommit(opts.projectDir);
     const startTime = Date.now();
     const args = [
       ...opts.args || [],
-      "-a",
-      "never",
-      "--sandbox",
-      "workspace-write",
-      "-C",
-      opts.projectDir,
-      "exec",
+      "--dangerously-skip-permissions",
+      "-p",
       opts.prompt
     ];
     return new Promise((resolve) => {
@@ -400,21 +405,27 @@ var CodexAdapter = class {
   }
 };
 
-// src/adapters/claude-code.ts
+// src/adapters/codex.ts
 import { spawn as spawn3 } from "child_process";
-var ClaudeCodeAdapter = class {
-  name = "claude-code";
-  description = "Anthropic Claude Code CLI adapter";
+var CodexAdapter = class {
+  name = "codex";
+  description = "OpenAI Codex CLI adapter";
   async detect() {
-    return await commandExists("claude") || await commandExists("claude-code");
+    return commandExists("codex");
   }
   async invoke(opts) {
-    const cmd = opts.commandOverride || (await commandExists("claude") ? "claude" : "claude-code");
+    const cmd = opts.commandOverride || "codex";
     const beforeHead = await getHeadCommit(opts.projectDir);
     const startTime = Date.now();
     const args = [
       ...opts.args || [],
-      "-p",
+      "-a",
+      "never",
+      "--sandbox",
+      "workspace-write",
+      "-C",
+      opts.projectDir,
+      "exec",
       opts.prompt
     ];
     return new Promise((resolve) => {
@@ -473,21 +484,21 @@ var ClaudeCodeAdapter = class {
   }
 };
 
-// src/adapters/opencode.ts
+// src/adapters/claude-code.ts
 import { spawn as spawn4 } from "child_process";
-var OpenCodeAdapter = class {
-  name = "opencode";
-  description = "OpenCode CLI adapter";
+var ClaudeCodeAdapter = class {
+  name = "claude-code";
+  description = "Anthropic Claude Code CLI adapter";
   async detect() {
-    return commandExists("opencode");
+    return await commandExists("claude") || await commandExists("claude-code");
   }
   async invoke(opts) {
-    const cmd = opts.commandOverride || "opencode";
+    const cmd = opts.commandOverride || (await commandExists("claude") ? "claude" : "claude-code");
     const beforeHead = await getHeadCommit(opts.projectDir);
     const startTime = Date.now();
     const args = [
       ...opts.args || [],
-      "run",
+      "-p",
       opts.prompt
     ];
     return new Promise((resolve) => {
@@ -546,23 +557,24 @@ var OpenCodeAdapter = class {
   }
 };
 
-// src/adapters/aider.ts
+// src/adapters/opencode.ts
 import { spawn as spawn5 } from "child_process";
-var AiderAdapter = class {
-  name = "aider";
-  description = "Aider AI pair programmer CLI adapter";
+var OpenCodeAdapter = class {
+  name = "opencode";
+  description = "OpenCode CLI adapter";
   async detect() {
-    return commandExists("aider");
+    return commandExists("opencode");
   }
   async invoke(opts) {
-    const cmd = opts.commandOverride || "aider";
+    const cmd = opts.commandOverride || "opencode";
     const beforeHead = await getHeadCommit(opts.projectDir);
     const startTime = Date.now();
     const args = [
       ...opts.args || [],
-      "--message",
-      opts.prompt,
-      "--yes-always"
+      "run",
+      "--standalone",
+      "--auto",
+      opts.prompt
     ];
     return new Promise((resolve) => {
       let output2 = "";
@@ -620,22 +632,23 @@ var AiderAdapter = class {
   }
 };
 
-// src/adapters/openhands.ts
+// src/adapters/aider.ts
 import { spawn as spawn6 } from "child_process";
-var OpenHandsAdapter = class {
-  name = "openhands";
-  description = "OpenHands CLI / headless adapter";
+var AiderAdapter = class {
+  name = "aider";
+  description = "Aider AI pair programmer CLI adapter";
   async detect() {
-    return commandExists("openhands");
+    return commandExists("aider");
   }
   async invoke(opts) {
-    const cmd = opts.commandOverride || "openhands";
+    const cmd = opts.commandOverride || "aider";
     const beforeHead = await getHeadCommit(opts.projectDir);
     const startTime = Date.now();
     const args = [
       ...opts.args || [],
-      "--prompt",
-      opts.prompt
+      "--message",
+      opts.prompt,
+      "--yes-always"
     ];
     return new Promise((resolve) => {
       let output2 = "";
@@ -693,20 +706,21 @@ var OpenHandsAdapter = class {
   }
 };
 
-// src/adapters/custom.ts
+// src/adapters/openhands.ts
 import { spawn as spawn7 } from "child_process";
-var CustomAdapter = class {
-  name = "custom";
-  description = "Custom command line agent adapter";
+var OpenHandsAdapter = class {
+  name = "openhands";
+  description = "OpenHands CLI / headless adapter";
   async detect() {
-    return true;
+    return commandExists("openhands");
   }
   async invoke(opts) {
-    const cmd = opts.commandOverride || "echo";
+    const cmd = opts.commandOverride || "openhands";
     const beforeHead = await getHeadCommit(opts.projectDir);
     const startTime = Date.now();
     const args = [
       ...opts.args || [],
+      "--prompt",
       opts.prompt
     ];
     return new Promise((resolve) => {
@@ -765,10 +779,83 @@ var CustomAdapter = class {
   }
 };
 
+// src/adapters/custom.ts
+import { spawn as spawn8 } from "child_process";
+var CustomAdapter = class {
+  name = "custom";
+  description = "Custom command line agent adapter";
+  async detect() {
+    return true;
+  }
+  async invoke(opts) {
+    const cmd = opts.commandOverride || "echo";
+    const beforeHead = await getHeadCommit(opts.projectDir);
+    const startTime = Date.now();
+    const args = [
+      ...opts.args || [],
+      opts.prompt
+    ];
+    return new Promise((resolve) => {
+      let output2 = "";
+      let timedOut = false;
+      const proc = spawn8(cmd, args, {
+        cwd: opts.projectDir,
+        env: { ...process.env, ...opts.env || {} },
+        stdio: ["ignore", "pipe", "pipe"]
+      });
+      let timeoutTimer;
+      if (opts.timeout && opts.timeout > 0) {
+        timeoutTimer = setTimeout(() => {
+          timedOut = true;
+          proc.kill("SIGTERM");
+        }, opts.timeout);
+      }
+      proc.stdout.on("data", (d) => {
+        const text = d.toString();
+        output2 += text;
+        opts.onStdout?.(text);
+      });
+      proc.stderr.on("data", (d) => {
+        const text = d.toString();
+        output2 += text;
+        opts.onStderr?.(text);
+      });
+      proc.on("close", async (code) => {
+        if (timeoutTimer) clearTimeout(timeoutTimer);
+        const duration = Date.now() - startTime;
+        const commits = await getCommitsSince(opts.projectDir, beforeHead);
+        const filesChanged = await getFilesChanged(opts.projectDir);
+        resolve({
+          exitCode: timedOut ? 124 : code ?? 1,
+          duration,
+          commits,
+          filesChanged,
+          rawOutput: output2,
+          error: timedOut ? "Execution timed out" : code !== 0 ? `Process exited with code ${code}` : void 0
+        });
+      });
+      proc.on("error", (err) => {
+        if (timeoutTimer) clearTimeout(timeoutTimer);
+        resolve({
+          exitCode: 1,
+          duration: Date.now() - startTime,
+          commits: [],
+          filesChanged: [],
+          error: `Failed to spawn ${cmd}: ${err.message}`
+        });
+      });
+    });
+  }
+  async parseStatus(projectDir) {
+    return readAgentStatusJson(projectDir);
+  }
+};
+
 // src/adapters/registry.ts
 var AdapterRegistry = class {
   adapters = /* @__PURE__ */ new Map();
   constructor() {
+    this.register(new AntigravityAdapter());
     this.register(new CodexAdapter());
     this.register(new ClaudeCodeAdapter());
     this.register(new OpenCodeAdapter());
@@ -780,7 +867,8 @@ var AdapterRegistry = class {
     this.adapters.set(adapter.name.toLowerCase(), adapter);
   }
   get(name) {
-    const key = name.toLowerCase();
+    let key = name.toLowerCase();
+    if (key === "agy") key = "antigravity";
     const adapter = this.adapters.get(key);
     if (!adapter) {
       if (this.adapters.has("custom")) {
@@ -791,7 +879,8 @@ var AdapterRegistry = class {
     return adapter;
   }
   has(name) {
-    return this.adapters.has(name.toLowerCase());
+    const key = name.toLowerCase();
+    return this.adapters.has(key === "agy" ? "antigravity" : key);
   }
   list() {
     return Array.from(this.adapters.values());
@@ -886,11 +975,6 @@ async function runInit(targetDir) {
       const privInput = await prompt("Create GitHub repositories as private? (yes/no)", "yes");
       privateRepos = privInput.toLowerCase().startsWith("y");
     }
-    const enableOtari = (await prompt("Enable Otari model gateway proxy? (yes/no)", existingConfig.otari.enabled ? "yes" : "no")).toLowerCase().startsWith("y");
-    let otariEndpoint = existingConfig.otari.endpoint;
-    if (enableOtari) {
-      otariEndpoint = await prompt("Otari gateway endpoint", otariEndpoint);
-    }
     const updated = saveConfig(projectsRoot, {
       projectsRoot,
       ideaSourceType: sourceType,
@@ -902,10 +986,7 @@ async function runInit(targetDir) {
         privateRepos,
         autoPush: Boolean(githubOwner)
       },
-      otari: {
-        enabled: enableOtari,
-        endpoint: otariEndpoint
-      }
+      otari: existingConfig.otari
     });
     console.log(pc2.green("\n\u2713 Configuration saved to: ") + path5.join(projectsRoot, ".24x7ai.config.json"));
     if (process.platform !== "win32") {
@@ -1272,10 +1353,10 @@ import handlebars from "handlebars";
 // src/github/repo.ts
 import fs5 from "fs";
 import path7 from "path";
-import { spawn as spawn8 } from "child_process";
+import { spawn as spawn9 } from "child_process";
 function execGit(args, cwd) {
   return new Promise((resolve) => {
-    const proc = spawn8("git", args, { cwd });
+    const proc = spawn9("git", args, { cwd });
     let stdout = "";
     let stderr = "";
     proc.stdout.on("data", (d) => {
@@ -1290,7 +1371,7 @@ function execGit(args, cwd) {
 }
 function execGh(args, cwd) {
   return new Promise((resolve) => {
-    const proc = spawn8("gh", args, { cwd });
+    const proc = spawn9("gh", args, { cwd });
     let stdout = "";
     let stderr = "";
     proc.stdout.on("data", (d) => {
@@ -1389,7 +1470,7 @@ var OtariGateway = class {
     try {
       const resp = await fetch(`${this.getEndpoint()}/budget/check`, {
         headers: {
-          Authorization: `Bearer ${this.config.apiKey || "otari-default"}`
+          Authorization: `Bearer ${this.getApiKey() || "otari-default"}`
         }
       });
       if (resp.ok) {
@@ -1403,16 +1484,23 @@ var OtariGateway = class {
     }
     return { allowed: true };
   }
+  getApiKey() {
+    return this.config.apiKey || process.env.OTARI_API_KEY;
+  }
   getAdapterEnv(projectId, runType) {
     if (!this.config.enabled) return {};
     const endpoint = this.getEndpoint();
+    const apiKey = this.getApiKey();
     const virtualKey = this.getVirtualKey(projectId, runType);
+    const authKey = apiKey || virtualKey;
     return {
       OPENAI_BASE_URL: endpoint,
       OPENAI_API_BASE: endpoint,
-      OPENAI_API_KEY: virtualKey,
+      OPENAI_API_KEY: authKey,
       ANTHROPIC_BASE_URL: endpoint,
-      ANTHROPIC_API_KEY: virtualKey,
+      ANTHROPIC_API_KEY: authKey,
+      OTARI_API_KEY: authKey,
+      OTARI_VIRTUAL_KEY: virtualKey,
       OTARI_PROJECT_ID: String(projectId),
       OTARI_RUN_TYPE: runType
     };
@@ -1472,6 +1560,27 @@ var Logger = class {
 // src/utils/lock.ts
 import fs7 from "fs";
 import path9 from "path";
+function isPidAlive(pid) {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (err) {
+    return err?.code === "EPERM";
+  }
+}
+function readLockPid(lockPath) {
+  let content;
+  try {
+    content = fs7.readFileSync(lockPath, "utf8");
+  } catch {
+    return null;
+  }
+  const pidStr = content.split("\n")[0]?.trim() ?? "";
+  if (!/^\d+$/.test(pidStr)) return null;
+  const pid = parseInt(pidStr, 10);
+  if (!Number.isSafeInteger(pid) || pid <= 0) return null;
+  return pid;
+}
 var FileLock = class {
   constructor(lockPath) {
     this.lockPath = lockPath;
@@ -1484,25 +1593,36 @@ var FileLock = class {
       const dir = path9.dirname(this.lockPath);
       fs7.mkdirSync(dir, { recursive: true });
       if (fs7.existsSync(this.lockPath)) {
+        let content = null;
         try {
-          const content = fs7.readFileSync(this.lockPath, "utf8");
-          const [pidStr] = content.split("\n");
-          const pid = parseInt(pidStr, 10);
-          if (!isNaN(pid)) {
-            try {
-              process.kill(pid, 0);
+          content = fs7.readFileSync(this.lockPath, "utf8");
+        } catch (err) {
+          if (err?.code !== "ENOENT") return false;
+        }
+        if (content !== null) {
+          const pidStr = content.split("\n")[0]?.trim() ?? "";
+          if (/^\d+$/.test(pidStr)) {
+            const pid = parseInt(pidStr, 10);
+            if (Number.isSafeInteger(pid) && pid > 0 && isPidAlive(pid)) {
               return false;
+            }
+            try {
+              fs7.unlinkSync(this.lockPath);
             } catch {
-              try {
-                fs7.unlinkSync(this.lockPath);
-              } catch {
-              }
+            }
+          } else {
+            try {
+              fs7.unlinkSync(this.lockPath);
+            } catch {
             }
           }
-        } catch {
         }
       }
-      this.fd = fs7.openSync(this.lockPath, "wx");
+      try {
+        this.fd = fs7.openSync(this.lockPath, "wx");
+      } catch (err) {
+        return false;
+      }
       fs7.writeSync(this.fd, `${process.pid}
 ${(/* @__PURE__ */ new Date()).toISOString()}
 `);
@@ -1516,14 +1636,21 @@ ${(/* @__PURE__ */ new Date()).toISOString()}
     if (!this.locked) return;
     try {
       if (this.fd !== null) {
-        fs7.closeSync(this.fd);
+        try {
+          fs7.closeSync(this.fd);
+        } catch {
+        }
         this.fd = null;
       }
       if (fs7.existsSync(this.lockPath)) {
-        fs7.unlinkSync(this.lockPath);
+        const currentPid = readLockPid(this.lockPath);
+        if (currentPid === process.pid) {
+          fs7.unlinkSync(this.lockPath);
+        }
       }
     } catch {
     } finally {
+      this.fd = null;
       this.locked = false;
     }
   }
@@ -1728,14 +1855,14 @@ import fs9 from "fs";
 import path11 from "path";
 
 // src/github/issues.ts
-import { spawn as spawn9 } from "child_process";
+import { spawn as spawn10 } from "child_process";
 async function fetchProjectIssues(projectDir, filterLabel) {
   return new Promise((resolve) => {
     const args = ["issue", "list", "--json", "number,title,body,labels", "--state", "open"];
     if (filterLabel) {
       args.push("--label", filterLabel);
     }
-    const proc = spawn9("gh", args, { cwd: projectDir });
+    const proc = spawn10("gh", args, { cwd: projectDir });
     let stdout = "";
     proc.stdout.on("data", (d) => {
       stdout += d.toString();
@@ -1754,7 +1881,7 @@ async function fetchProjectIssues(projectDir, filterLabel) {
 }
 
 // src/github/pr.ts
-import { spawn as spawn10 } from "child_process";
+import { spawn as spawn11 } from "child_process";
 async function createPullRequest(projectDir, opts) {
   return new Promise((resolve) => {
     const args = [
@@ -1769,7 +1896,7 @@ async function createPullRequest(projectDir, opts) {
       "--head",
       opts.head || "dev"
     ];
-    const proc = spawn10("gh", args, { cwd: projectDir });
+    const proc = spawn11("gh", args, { cwd: projectDir });
     let stdout = "";
     let stderr = "";
     proc.stdout.on("data", (d) => {
@@ -2510,7 +2637,7 @@ async function handleAdapterCommand(action, name, options) {
 // src/cli/commands/logs.ts
 import fs11 from "fs";
 import path13 from "path";
-import { spawn as spawn11 } from "child_process";
+import { spawn as spawn12 } from "child_process";
 import pc8 from "picocolors";
 function runLogs(identifier, options) {
   const root = resolveProjectsRoot(options?.projectsDir);
@@ -2535,7 +2662,7 @@ function runLogs(identifier, options) {
     args.push("-f");
   }
   args.push(logFile);
-  const proc = spawn11("tail", args, { stdio: "inherit" });
+  const proc = spawn12("tail", args, { stdio: "inherit" });
   proc.on("close", (code) => {
     process.exitCode = code ?? 0;
   });
