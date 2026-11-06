@@ -1,43 +1,92 @@
 # 24x7ai
 
-1 harness, 1 vps, 1 .sh
+**Universal Agent Fleet Controller — 1 package, 1 vps, 1 command**
 
-An npm package for turning a user-provided ideas CSV into project folders, running an MVP coding agent, and periodically discovering and starting ongoing project workers.
+Feed in a CSV of ideas, leave a $20 VPS running, and wake up to an autonomous software factory with an interactive TUI fleet controller. While the main pipeline builds MVP after MVP, persistent background daemons independently watch GitHub issues, write tests, refine code, and ship improvements.
 
-## Guided install
-
-On a Linux or macOS host with Node.js 18+, bash, Python 3, Git, curl, `flock`, and a cron service:
-
-```sh
-npx 24x7ai init
+```
+┌─ 24x7ai Fleet Controller ─────────────────────────────────┐
+│                                                            │
+│  Pipeline: Building #11/50 — "recipe-sharing-app"          │
+│  Agent: claude-code | Running 4m32s | 2 commits so far     │
+│                                                            │
+│  ── Active Daemons (10/10) ──────────── max-parallel: 4 ── │
+│  #  Project              Status   Last Run    Commits  GH  │
+│  1  expense-tracker      ● idle   2m ago      47       3↓  │
+│  2  task-board           ● run    now         31       1↓  │
+│  3  weather-dashboard    ● idle   8m ago      22       0   │
+│  4  markdown-editor      ● stuck  34m ago     15       —   │
+│  5  chat-app             ● idle   5m ago      38       2↓  │
+│                                                            │
+│  [s]tart [p]ause [r]un [l]ogs [q]uit                       │
+└────────────────────────────────────────────────────────────┘
 ```
 
-The guided setup asks for the projects folder, CSV URL or local CSV, coding agent executable and mode, optional GitHub owner, and both schedules. It creates `run-agent.sh`, `run-sub-agents.sh`, configuration and state, then offers to install both cron entries. Google Sheets edit links are converted to CSV export URLs. Existing queue state is kept if setup is run again. No credentials or idea source are embedded in the package.
+## Quick Start
 
-CSV needs a header row. Common columns include `Sl No`, `Idea`, and `Agent Automatable`. Rows marked `NO` are skipped. `PARTIAL` projects can be worked on, with the agent instructed not to claim external or manual work.
-
-## Commands
+On any Linux or macOS machine with Node.js 18+ and Git:
 
 ```sh
+# Guided interactive setup
 npx 24x7ai init
-npx 24x7ai run ~/projects
-npx 24x7ai supervise ~/projects
-npx 24x7ai status ~/projects
-npx 24x7ai set-ideas ~/projects ~/projects/ideas.csv
-npx 24x7ai logs ~/projects master.log
-npx 24x7ai cron ~/projects '0 * * * *' '*/15 * * * *'
+
+# Run serial MVP pipeline (CSV -> working repos)
+npx 24x7ai run
+
+# Launch interactive terminal UI fleet controller
+npx 24x7ai fleet
+
+# Check fleet status table
+npx 24x7ai status
 ```
 
-The master worker creates or continues one MVP at a time. Existing active MVPs stay selected until `.agent-status.json` says `mvp_complete: true`. The supervisor discovers `run-sub-agent.sh` files under project folders; each child takes its own `flock` lock outside its Git repository. A child marked `development_complete: true` is skipped. Child improvements are committed on `dev`; they are pushed when a GitHub owner is configured and an `origin` remote exists.
+## CLI Commands
 
-`ideas.example.csv` is a starter file. Copy it into your projects folder, edit the idea rows, then use `set-ideas` to switch the configured source from a URL to that local CSV.
+| Command | Description |
+|---|---|
+| `npx 24x7ai init [dir]` | Guided interactive setup (CSV source, adapters, GitHub, Otari gateway) |
+| `npx 24x7ai run [dir]` | Run the serial MVP pipeline to process ideas from CSV |
+| `npx 24x7ai fleet [dir]` | Launch the live Ink TUI Fleet Controller dashboard |
+| `npx 24x7ai status [dir]` | Display fleet overview and project daemon metrics from SQLite |
+| `npx 24x7ai daemon start <project>` | Start/enable background improvement daemon for a project |
+| `npx 24x7ai daemon pause <project>` | Pause a project daemon |
+| `npx 24x7ai daemon resume <project>` | Resume a paused project daemon |
+| `npx 24x7ai daemon run <project>` | Immediately run a single daemon cycle for a project |
+| `npx 24x7ai daemon supervise [dir]` | Run a supervision pass across all active project daemons |
+| `npx 24x7ai adapter list` | Show all detected and installed agent adapters |
+| `npx 24x7ai adapter test <name>` | Test an adapter in the target directory |
+| `npx 24x7ai logs [target] [-f]` | Stream or inspect fleet or project logs |
+| `npx 24x7ai set-ideas <csv-or-url>` | Update idea source to a local CSV, URL or Google Sheets |
+| `npx 24x7ai cron [dir]` | Install/update crontab entries for scheduled automation |
 
-## Configuration and agent support
+## Architecture
 
-Setup writes `.agent-orchestrator.env` under the projects directory. Supported modes are Codex, OpenCode, Claude Code, and custom command. Adjust `AGENT_COMMAND`, `AGENT_ARGS`, and `AGENT_PROVIDER` there if your CLI invocation differs. The scripts call GitHub CLI only if a GitHub owner is configured; leave it blank to disable automatic remote creation and pushes.
+- **Clean TypeScript Core:** Zero shell script dependencies in the critical path. All state, orchestration, and process management run in TypeScript.
+- **SQLite Fleet Store:** Powered by `better-sqlite3` with WAL mode and foreign keys. Fast concurrent queries, full run history, commit tracking, and metrics.
+- **Universal Adapter Pattern:** Out-of-the-box support for:
+  - **Codex** CLI
+  - **Claude Code** (`claude` / `claude-code`)
+  - **OpenCode** CLI
+  - **Aider**
+  - **OpenHands**
+  - **Custom** CLI commands
+- **Otari Model Gateway:** Native support for Mozilla's open-source model gateway. Enables unified OpenAI-compatible routing, virtual API keys, budget caps, and multi-provider failover across the entire fleet.
+- **Stuck Detection:** Automatically identifies and quarantines agents looping without commits, failing repeatedly with identical errors, or exceeding timeouts.
+- **GitHub Integration:** Automatically creates repositories, initializes `main` and `dev` branches, watches for open issues with labels (`agent-task`), and submits pull requests for daemon improvements.
 
-Cron schedules default to hourly idea processing and supervision every 15 minutes. Re-running `init` or `cron` replaces only this package's tagged cron entries.
+## Ideas CSV Format
 
-## Platform note
+Provide a CSV file (local file, public URL, or Google Sheets edit link). Example `ideas.example.csv`:
 
-The shell runners and cron integration target Linux/macOS. Windows users can run the npm CLI under WSL or another Linux environment. Docker is not required.
+```csv
+Sl No,Idea,Agent Automatable
+1,Recipe Sharing Platform,YES
+2,Minimalist Markdown Note Editor,YES
+3,Crypto Arbitrage Bot,NO
+```
+
+Rows marked `NO` or `NOT AUTOMATABLE` are automatically skipped.
+
+## License
+
+Apache-2.0

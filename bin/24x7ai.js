@@ -1,2 +1,2 @@
 #!/usr/bin/env node
-import './agent-orchestrator.js';
+import '../dist/cli.js';

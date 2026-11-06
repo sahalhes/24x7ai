@@ -1,14 +1,17 @@
 {
   "name": "24x7ai",
-  "version": "1.0.1",
-  "description": "1 harness, 1 vps, 1 .sh",
-  "main": "./bin/agent-orchestrator.js",
+  "version": "2.0.0-alpha.1",
+  "description": "Universal Agent Fleet Controller — 1 package, 1 vps, 1 command",
+  "main": "./dist/index.js",
   "bin": {
-    "24x7ai": "bin/24x7ai.js"
+    "24x7ai": "./dist/cli.js"
   },
   "scripts": {
-    "start": "node ./bin/agent-orchestrator.js",
-    "check": "node --check ./bin/agent-orchestrator.js"
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "test": "vitest run",
+    "check": "tsc --noEmit",
+    "start": "node ./dist/cli.js"
   },
   "keywords": [],
   "author": "",
@@ -18,11 +21,28 @@
     "node": ">=18"
   },
   "files": [
-    "bin/24x7ai.js",
-    "bin/agent-orchestrator.js",
+    "dist/",
+    "bin/",
     "templates/",
     "README.md",
     "ideas.example.csv",
     "LICENSE"
-  ]
+  ],
+  "dependencies": {
+    "better-sqlite3": "^13.0.3",
+    "commander": "^15.0.0",
+    "csv-parse": "^7.0.3",
+    "handlebars": "^4.7.10",
+    "ink": "^8.0.0",
+    "picocolors": "^1.1.1",
+    "react": "^19.3.1"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^9.6.0",
+    "@types/node": "^26.6.6",
+    "@types/react": "^19.3.0",
+    "tsup": "^9.0.0",
+    "typescript": "^7.0.2",
+    "vitest": "^5.1.0"
+  }
 }

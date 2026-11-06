@@ -1,0 +1,98 @@
+#!/usr/bin/env node
+import { Command } from 'commander';
+import { runInit } from './commands/init.js';
+import { runMvpPipeline } from './commands/run.js';
+import { runFleetTui } from './commands/fleet.js';
+import { runStatus } from './commands/status.js';
+import { handleDaemonCommand } from './commands/daemon.js';
+import { handleAdapterCommand } from './commands/adapter.js';
+import { runLogs } from './commands/logs.js';
+import { runSetIdeas } from './commands/set-ideas.js';
+import { installFleetCron } from './commands/cron.js';
+
+const program = new Command();
+
+program
+  .name('24x7ai')
+  .description('Universal Agent Fleet Controller — 1 package, 1 vps, 1 command')
+  .version('2.0.0-alpha.1');
+
+program
+  .command('init [dir]')
+  .description('Interactive guided setup for projects, ideas, adapters and schedules')
+  .action(async (dir) => {
+    await runInit(dir);
+  });
+
+program
+  .command('run [dir]')
+  .description('Run the serial MVP pipeline to process ideas from CSV')
+  .option('-p, --max-parallel <n>', 'Maximum parallel executions', parseInt)
+  .action(async (dir, opts) => {
+    await runMvpPipeline(dir, opts);
+  });
+
+program
+  .command('fleet [dir]')
+  .description('Launch the live Ink TUI Fleet Controller dashboard')
+  .action(async (dir) => {
+    await runFleetTui(dir);
+  });
+
+program
+  .command('status [dir]')
+  .description('Display fleet status table and recent runs')
+  .action((dir) => {
+    runStatus(dir);
+  });
+
+program
+  .command('daemon <action> [target]')
+  .description('Manage per-project daemons (start, stop, pause, resume, run, supervise, list)')
+  .option('-d, --dir <dir>', 'Projects directory')
+  .action(async (action, target, opts) => {
+    await handleDaemonCommand(action as any, target, { projectsDir: opts.dir });
+  });
+
+program
+  .command('supervise [dir]')
+  .description('Run a supervision pass across all active project daemons')
+  .action(async (dir) => {
+    await handleDaemonCommand('supervise', undefined, { projectsDir: dir });
+  });
+
+program
+  .command('adapter <action> [name]')
+  .description('Inspect or test agent adapters (list, test)')
+  .option('-d, --dir <dir>', 'Projects directory')
+  .action(async (action, name, opts) => {
+    await handleAdapterCommand(action as any, name, { projectsDir: opts.dir });
+  });
+
+program
+  .command('logs [target]')
+  .description('Follow or view fleet or project agent logs')
+  .option('-f, --follow', 'Follow log stream')
+  .option('-d, --dir <dir>', 'Projects directory')
+  .action((target, opts) => {
+    runLogs(target, { follow: opts.follow, projectsDir: opts.dir });
+  });
+
+program
+  .command('set-ideas <source> [dir]')
+  .description('Update idea source to a local CSV, URL or Google Sheets')
+  .action((source, dir) => {
+    runSetIdeas(source, dir);
+  });
+
+program
+  .command('cron [dir] [pipelineSchedule] [superviseSchedule]')
+  .description('Install or update system cron entries for automated fleet execution')
+  .action((dir, pSched, sSched) => {
+    installFleetCron(dir, pSched, sSched);
+  });
+
+program.parseAsync(process.argv).catch((err) => {
+  console.error(`Error: ${err.message}`);
+  process.exit(1);
+});
