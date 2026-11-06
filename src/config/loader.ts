@@ -84,9 +84,18 @@ export function loadConfig(projectsRoot?: string): AppConfig {
   // Allow environment variable overrides
   if (process.env.AGENT_COMMAND) merged.adapterCommand = process.env.AGENT_COMMAND;
   if (process.env.AGENT_PROVIDER) {
-    merged.defaultAdapter = process.env.AGENT_PROVIDER === 'claude' ? 'claude-code' : process.env.AGENT_PROVIDER;
+    const prov = process.env.AGENT_PROVIDER.toLowerCase();
+    if (prov === 'claude') {
+      merged.defaultAdapter = 'claude-code';
+    } else if (prov === 'agy') {
+      merged.defaultAdapter = 'antigravity';
+    } else {
+      merged.defaultAdapter = process.env.AGENT_PROVIDER;
+    }
   }
   if (process.env.GITHUB_OWNER) merged.github.owner = process.env.GITHUB_OWNER;
+  if (process.env.OTARI_API_KEY) merged.otari.apiKey = process.env.OTARI_API_KEY;
+  if (process.env.OTARI_ENDPOINT) merged.otari.endpoint = process.env.OTARI_ENDPOINT;
 
   return merged;
 }

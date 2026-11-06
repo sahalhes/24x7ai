@@ -16,7 +16,10 @@ export class OpenCodeAdapter implements AgentAdapter {
 
     const args = [
       ...(opts.args || []),
-      'run', opts.prompt,
+      'run',
+      '--standalone',
+      '--auto',
+      opts.prompt,
     ];
 
     return new Promise((resolve) => {

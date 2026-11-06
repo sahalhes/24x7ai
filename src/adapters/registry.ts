@@ -1,4 +1,5 @@
 import { AgentAdapter, AgentResult } from './base.js';
+import { AntigravityAdapter } from './antigravity.js';
 import { CodexAdapter } from './codex.js';
 import { ClaudeCodeAdapter } from './claude-code.js';
 import { OpenCodeAdapter } from './opencode.js';
@@ -10,6 +11,7 @@ export class AdapterRegistry {
   private adapters = new Map<string, AgentAdapter>();
 
   constructor() {
+    this.register(new AntigravityAdapter());
     this.register(new CodexAdapter());
     this.register(new ClaudeCodeAdapter());
     this.register(new OpenCodeAdapter());
@@ -23,7 +25,8 @@ export class AdapterRegistry {
   }
 
   get(name: string): AgentAdapter {
-    const key = name.toLowerCase();
+    let key = name.toLowerCase();
+    if (key === 'agy') key = 'antigravity';
     const adapter = this.adapters.get(key);
     if (!adapter) {
       // If not found, return custom adapter or throw
@@ -36,7 +39,8 @@ export class AdapterRegistry {
   }
 
   has(name: string): boolean {
-    return this.adapters.has(name.toLowerCase());
+    const key = name.toLowerCase();
+    return this.adapters.has(key === 'agy' ? 'antigravity' : key);
   }
 
   list(): AgentAdapter[] {

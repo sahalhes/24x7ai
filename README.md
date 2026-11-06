@@ -72,6 +72,7 @@ npx 24x7ai status
   - **Custom** CLI commands
 - **Otari Model Gateway:** Native support for Mozilla's open-source model gateway. Enables unified OpenAI-compatible routing, virtual API keys, budget caps, and multi-provider failover across the entire fleet.
 - **Stuck Detection:** Automatically identifies and quarantines agents looping without commits, failing repeatedly with identical errors, or exceeding timeouts.
+- **Crash-Safe File Locks:** The master pipeline lock and per-project daemon locks use `flock`-style files (`src/utils/lock.ts`) with stale-PID recovery, so a crashed run does not wedge the fleet. A lock file is respected while its PID is alive — including `EPERM` (alive but not signalable) — and malformed or dead-PID locks are reclaimed instead of deadlocking the next acquire. Release only removes the file when it still contains the holder's own PID, so a replacement owner's lock is never deleted.
 - **GitHub Integration:** Automatically creates repositories, initializes `main` and `dev` branches, watches for open issues with labels (`agent-task`), and submits pull requests for daemon improvements.
 
 ## Ideas CSV Format

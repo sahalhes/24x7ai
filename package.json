@@ -4,16 +4,29 @@
   "description": "Universal Agent Fleet Controller — 1 package, 1 vps, 1 command",
   "main": "./dist/index.js",
   "bin": {
-    "24x7ai": "./dist/cli.js"
+    "24x7ai": "dist/cli.js"
   },
   "scripts": {
     "build": "tsup",
     "dev": "tsup --watch",
     "test": "vitest run",
     "check": "tsc --noEmit",
+    "prepublishOnly": "npm run check && npm test && npm run build",
     "start": "node ./dist/cli.js"
   },
-  "keywords": [],
+  "keywords": [
+    "agent",
+    "fleet-controller",
+    "ai",
+    "autonomous",
+    "coding-agent",
+    "orchestrator",
+    "opencode",
+    "claude-code",
+    "antigravity",
+    "codex",
+    "otari"
+  ],
   "author": "",
   "license": "Apache-2.0",
   "type": "module",
@@ -24,6 +37,7 @@
     "dist/",
     "bin/",
     "templates/",
+    "docs/",
     "README.md",
     "ideas.example.csv",
     "LICENSE"

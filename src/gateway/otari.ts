@@ -33,7 +33,7 @@ export class OtariGateway {
       // Query Otari budget endpoint if accessible
       const resp = await fetch(`${this.getEndpoint()}/budget/check`, {
         headers: {
-          Authorization: `Bearer ${this.config.apiKey || 'otari-default'}`,
+          Authorization: `Bearer ${this.getApiKey() || 'otari-default'}`,
         },
       });
       if (resp.ok) {
@@ -50,18 +50,28 @@ export class OtariGateway {
     return { allowed: true };
   }
 
+  getApiKey(): string | undefined {
+    return this.config.apiKey || process.env.OTARI_API_KEY;
+  }
+
   getAdapterEnv(projectId: number, runType: string): Record<string, string> {
     if (!this.config.enabled) return {};
 
     const endpoint = this.getEndpoint();
+    const apiKey = this.getApiKey();
     const virtualKey = this.getVirtualKey(projectId, runType);
+
+    // Use the configured API key for model calls; fall back to virtual key for tracing
+    const authKey = apiKey || virtualKey;
 
     return {
       OPENAI_BASE_URL: endpoint,
       OPENAI_API_BASE: endpoint,
-      OPENAI_API_KEY: virtualKey,
+      OPENAI_API_KEY: authKey,
       ANTHROPIC_BASE_URL: endpoint,
-      ANTHROPIC_API_KEY: virtualKey,
+      ANTHROPIC_API_KEY: authKey,
+      OTARI_API_KEY: authKey,
+      OTARI_VIRTUAL_KEY: virtualKey,
       OTARI_PROJECT_ID: String(projectId),
       OTARI_RUN_TYPE: runType,
     };
