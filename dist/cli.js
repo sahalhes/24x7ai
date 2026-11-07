@@ -1717,7 +1717,9 @@ var MvpPipeline = class {
     }
   }
   buildMvpPrompt(project) {
-    return [
+    const parts = [];
+    if (this.config.promptPrefix) parts.push(this.config.promptPrefix);
+    parts.push(
       `Read AGENTS.md, AUTODEVELOP.md and .project-source.json.`,
       `Build or continue the smallest genuinely useful working MVP for idea Sl No ${project.sl_no}: "${project.idea}".`,
       `Inspect and preserve existing work. Work only in this repository on dev.`,
@@ -1726,7 +1728,9 @@ var MvpPipeline = class {
       `Set mvp_complete true only when the core working software is implemented and local tests/checks pass.`,
       `Never set development_complete merely because the MVP works.`,
       `Leave implementation changes in the working tree.`
-    ].join(" ");
+    );
+    if (this.config.promptSuffix) parts.push(this.config.promptSuffix);
+    return parts.join(" ");
   }
 };
 

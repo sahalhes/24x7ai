@@ -219,7 +219,9 @@ export class MvpPipeline {
   }
 
   private buildMvpPrompt(project: ProjectRecord): string {
-    return [
+    const parts: string[] = [];
+    if (this.config.promptPrefix) parts.push(this.config.promptPrefix);
+    parts.push(
       `Read AGENTS.md, AUTODEVELOP.md and .project-source.json.`,
       `Build or continue the smallest genuinely useful working MVP for idea Sl No ${project.sl_no}: "${project.idea}".`,
       `Inspect and preserve existing work. Work only in this repository on dev.`,
@@ -227,7 +229,9 @@ export class MvpPipeline {
       `Maintain valid .agent-status.json with sl_no, project, status, mvp_complete, development_complete, branch, last_run, next_action and blocked.`,
       `Set mvp_complete true only when the core working software is implemented and local tests/checks pass.`,
       `Never set development_complete merely because the MVP works.`,
-      `Leave implementation changes in the working tree.`,
-    ].join(' ');
+      `Leave implementation changes in the working tree.`
+    );
+    if (this.config.promptSuffix) parts.push(this.config.promptSuffix);
+    return parts.join(' ');
   }
 }
