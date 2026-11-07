@@ -9,6 +9,7 @@ import { handleAdapterCommand } from './commands/adapter.js';
 import { runLogs } from './commands/logs.js';
 import { runSetIdeas } from './commands/set-ideas.js';
 import { installFleetCron } from './commands/cron.js';
+import { runDoctor } from './commands/doctor.js';
 
 const program = new Command();
 
@@ -91,6 +92,13 @@ program
   .description('Install or update system cron entries for automated fleet execution')
   .action((dir, pSched, sSched) => {
     installFleetCron(dir, pSched, sSched);
+  });
+
+program
+  .command('doctor')
+  .description('Run system diagnostic check for host dependencies')
+  .action(async () => {
+    await runDoctor();
   });
 
 program.parseAsync(process.argv).catch((err) => {

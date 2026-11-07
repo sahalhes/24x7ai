@@ -2582,6 +2582,50 @@ function runSetIdeas(source, projectsDir) {
   console.log(pc9.green(`\u2713 Idea source updated to ${sourceType}: ${finalSource}`));
 }
 
+// src/cli/commands/doctor.ts
+import { spawnSync as spawnSync2 } from "child_process";
+import pc10 from "picocolors";
+async function runDoctor() {
+  console.log(pc10.cyan("\n24x7ai Fleet Diagnostics\n"));
+  const nodeVer = process.version;
+  const major = parseInt(nodeVer.slice(1).split(".")[0], 10);
+  if (major >= 18) {
+    console.log(pc10.green("  \u2713 Node.js: ") + nodeVer + pc10.gray(" (supported)"));
+  } else {
+    console.log(pc10.red("  \u2717 Node.js: ") + nodeVer + pc10.yellow(" (requires Node.js 18+)"));
+  }
+  const git = spawnSync2("git", ["--version"], { encoding: "utf8" });
+  if (git.status === 0) {
+    console.log(pc10.green("  \u2713 Git: ") + git.stdout.trim());
+  } else {
+    console.log(pc10.red("  \u2717 Git: not found in PATH"));
+  }
+  const gh = spawnSync2("gh", ["--version"], { encoding: "utf8" });
+  if (gh.status === 0) {
+    const auth = spawnSync2("gh", ["auth", "status"], { encoding: "utf8" });
+    const authOk = auth.status === 0;
+    console.log(pc10.green("  \u2713 GitHub CLI: ") + gh.stdout.split("\n")[0] + (authOk ? pc10.green(" (authenticated)") : pc10.yellow(" (unauthenticated)")));
+  } else {
+    console.log(pc10.yellow("  ! GitHub CLI: not installed (optional for remote pushes)"));
+  }
+  const cron = spawnSync2("crontab", ["-l"], { encoding: "utf8" });
+  if (cron.status === 0 || !cron.stderr?.includes("not found")) {
+    console.log(pc10.green("  \u2713 Crontab: available for fleet scheduling"));
+  } else {
+    console.log(pc10.yellow("  ! Crontab: unavailable or restricted"));
+  }
+  console.log(pc10.cyan("\nAgent Adapters:"));
+  const detected = await defaultRegistry.detectAvailable();
+  for (const item of detected) {
+    if (item.available) {
+      console.log(pc10.green("  \u2713 ") + pc10.bold(item.adapter.name.padEnd(14)) + pc10.gray(item.adapter.description));
+    } else {
+      console.log(pc10.gray("  - " + item.adapter.name.padEnd(14) + item.adapter.description));
+    }
+  }
+  console.log("\n" + pc10.green("System check complete.\n"));
+}
+
 // src/cli/index.ts
 var program = new Command();
 program.name("24x7ai").description("Universal Agent Fleet Controller \u2014 1 package, 1 vps, 1 command").version("2.0.0-alpha.1");
@@ -2614,6 +2658,9 @@ program.command("set-ideas <source> [dir]").description("Update idea source to a
 });
 program.command("cron [dir] [pipelineSchedule] [superviseSchedule]").description("Install or update system cron entries for automated fleet execution").action((dir, pSched, sSched) => {
   installFleetCron(dir, pSched, sSched);
+});
+program.command("doctor").description("Run system diagnostic check for host dependencies").action(async () => {
+  await runDoctor();
 });
 program.parseAsync(process.argv).catch((err) => {
   console.error(`Error: ${err.message}`);
