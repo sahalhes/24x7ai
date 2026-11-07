@@ -27,6 +27,8 @@ export interface AppConfig {
   stuckTimeoutMs: number;
   stuckConsecutiveNoChanges: number;
   github: GitHubConfig;
+  gitUserName?: string;
+  gitUserEmail?: string;
   otari: GatewayConfig;
   dryRun?: boolean;
 }

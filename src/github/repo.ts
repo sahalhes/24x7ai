@@ -28,12 +28,14 @@ function execGh(args: string[], cwd: string): Promise<{ code: number; stdout: st
   });
 }
 
-export async function ensureGitRepo(projectDir: string, defaultBranch = 'main'): Promise<void> {
+export async function ensureGitRepo(projectDir: string, defaultBranch = 'main', author?: { name?: string; email?: string }): Promise<void> {
+  const name = author?.name || process.env.GIT_USER_NAME || 'Autonomous Agent';
+  const email = author?.email || process.env.GIT_USER_EMAIL || 'agent@localhost';
   const gitDir = path.join(projectDir, '.git');
   if (!fs.existsSync(gitDir)) {
     await execGit(['init', '-b', defaultBranch], projectDir);
-    await execGit(['config', 'user.name', process.env.GIT_USER_NAME || 'Autonomous Agent'], projectDir);
-    await execGit(['config', 'user.email', process.env.GIT_USER_EMAIL || 'agent@localhost'], projectDir);
+    await execGit(['config', 'user.name', name], projectDir);
+    await execGit(['config', 'user.email', email], projectDir);
   }
 }
 
