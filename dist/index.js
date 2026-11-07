@@ -1373,6 +1373,12 @@ var OtariGateway = class {
 import fs6 from "fs";
 import path6 from "path";
 import pc from "picocolors";
+var isSilent = false;
+var isVerbose = false;
+function setLogVerbosity(opts) {
+  if (opts.silent) isSilent = true;
+  if (opts.verbose) isVerbose = true;
+}
 var Logger = class {
   constructor(logFilePath, prefix = "") {
     this.logFilePath = logFilePath;
@@ -1402,6 +1408,8 @@ var Logger = class {
     else if (level === "error") coloredLevel = pc.red(coloredLevel);
     else coloredLevel = pc.gray(coloredLevel);
     const consoleOutput = `${pc.gray(timestamp)} ${coloredLevel.padEnd(5)} ${formattedPrefix}${message}`;
+    if (isSilent && level !== "error") return;
+    if (level === "debug" && !isVerbose) return;
     if (level === "error") {
       console.error(consoleOutput, ...meta);
     } else {
@@ -2107,7 +2115,9 @@ export {
   getHeadCommit,
   initDb,
   isRunDue,
+  isSilent,
   isValidCron,
+  isVerbose,
   loadConfig,
   loadIdeas,
   parseIdeasCsv,
@@ -2118,6 +2128,7 @@ export {
   removeWorktree,
   resolveProjectsRoot,
   saveConfig,
+  setLogVerbosity,
   syncGitHubRepo,
   withLock
 };

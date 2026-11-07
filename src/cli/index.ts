@@ -14,13 +14,20 @@ import { runConfigCommand } from './commands/config.js';
 import { runClean } from './commands/clean.js';
 import { runBackup, runRestore } from './commands/backup.js';
 import { runExport } from './commands/export.js';
+import { setLogVerbosity } from '../utils/logger.js';
 
 const program = new Command();
 
 program
   .name('24x7ai')
   .description('Universal Agent Fleet Controller — 1 package, 1 vps, 1 command')
-  .version('2.0.0-alpha.1');
+  .version('2.0.0-alpha.1')
+  .option('--silent', 'Suppress all non-error output')
+  .option('--verbose', 'Enable verbose debugging logs')
+  .hook('preAction', (thisCommand) => {
+    const opts = thisCommand.opts();
+    setLogVerbosity({ silent: opts.silent, verbose: opts.verbose });
+  });
 
 program
   .command('init [dir]')
