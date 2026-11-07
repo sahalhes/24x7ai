@@ -2498,7 +2498,10 @@ async function handleDaemonCommand(action, identifier, options) {
     return;
   }
   if (action === "list") {
-    const projects = store.listProjects();
+    let projects = store.listProjects();
+    if (options?.status) {
+      projects = projects.filter((p) => p.daemon_status === options.status);
+    }
     console.log(pc6.cyan(`
 Active Fleet Daemons: ${root}`));
     for (const p of projects) {
@@ -2829,8 +2832,8 @@ program.command("fleet [dir]").description("Launch the live Ink TUI Fleet Contro
 program.command("status [dir]").description("Display fleet status table and recent runs").option("--json", "Output fleet status in JSON format").option("-l, --limit <n>", "Limit number of projects shown", parseInt).action((dir, opts) => {
   runStatus(dir, opts);
 });
-program.command("daemon <action> [target]").description("Manage per-project daemons (start, stop, pause, resume, restart, run, supervise, list)").option("-d, --dir <dir>", "Projects directory").action(async (action, target, opts) => {
-  await handleDaemonCommand(action, target, { projectsDir: opts.dir });
+program.command("daemon <action> [target]").description("Manage per-project daemons (start, stop, pause, resume, restart, run, supervise, list)").option("-d, --dir <dir>", "Projects directory").option("-s, --status <status>", "Filter daemons by status (idle, running, stuck, paused)").action(async (action, target, opts) => {
+  await handleDaemonCommand(action, target, { projectsDir: opts.dir, status: opts.status });
 });
 program.command("supervise [dir]").description("Run a supervision pass across all active project daemons").action(async (dir) => {
   await handleDaemonCommand("supervise", void 0, { projectsDir: dir });

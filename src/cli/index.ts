@@ -57,8 +57,9 @@ program
   .command('daemon <action> [target]')
   .description('Manage per-project daemons (start, stop, pause, resume, restart, run, supervise, list)')
   .option('-d, --dir <dir>', 'Projects directory')
+  .option('-s, --status <status>', 'Filter daemons by status (idle, running, stuck, paused)')
   .action(async (action, target, opts) => {
-    await handleDaemonCommand(action as any, target, { projectsDir: opts.dir });
+    await handleDaemonCommand(action as any, target, { projectsDir: opts.dir, status: opts.status });
   });
 
 program
