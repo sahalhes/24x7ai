@@ -82,7 +82,7 @@ Provide a CSV file (local file, public URL, or Google Sheets edit link). Example
 Sl No,Idea,Agent Automatable
 1,Recipe Sharing Platform,YES
 2,Minimalist Markdown Note Editor,YES
-3,Crypto Arbitrage Bot,NO
+3,Autonomous Cloud FinOps Optimizer,YES
 ```
 
 Rows marked `NO` or `NOT AUTOMATABLE` are automatically skipped.
