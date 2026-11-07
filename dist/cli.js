@@ -1711,7 +1711,7 @@ var MvpPipeline = class {
     });
     const newSha = await commitWorkingTree(
       projectDir,
-      `feat: autonomous MVP progress for idea ${selected.sl_no} (${selected.slug})`
+      this.config.commitMessageTemplate ? this.config.commitMessageTemplate.replace("{sl_no}", String(selected.sl_no)).replace("{slug}", selected.slug) : `feat: autonomous MVP progress for idea ${selected.sl_no} (${selected.slug})`
     );
     if (newSha) {
       this.logger.info(`Committed changes: ${newSha}`);
