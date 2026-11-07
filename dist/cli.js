@@ -2632,6 +2632,46 @@ async function runDoctor() {
   console.log("\n" + pc10.green("System check complete.\n"));
 }
 
+// src/cli/commands/config.ts
+import pc11 from "picocolors";
+function runConfigCommand(action, key, value, projectsDir) {
+  const root = resolveProjectsRoot(projectsDir);
+  const config = loadConfig(root);
+  if (action === "list") {
+    console.log(pc11.cyan(`
+24x7ai Configuration (${root}):
+`));
+    for (const [k, v] of Object.entries(config)) {
+      console.log(`  ${pc11.bold(k)}: ${typeof v === "object" ? JSON.stringify(v) : v}`);
+    }
+    console.log("");
+    return;
+  }
+  if (action === "get") {
+    if (!key) {
+      console.error(pc11.red("Error: Key is required for config get <key>"));
+      process.exitCode = 1;
+      return;
+    }
+    const val = config[key];
+    console.log(typeof val === "object" ? JSON.stringify(val, null, 2) : val);
+    return;
+  }
+  if (action === "set") {
+    if (!key || value === void 0) {
+      console.error(pc11.red("Error: Key and value are required for config set <key> <val>"));
+      process.exitCode = 1;
+      return;
+    }
+    let parsedVal = value;
+    if (value === "true") parsedVal = true;
+    else if (value === "false") parsedVal = false;
+    else if (!isNaN(Number(value))) parsedVal = Number(value);
+    saveConfig(root, { [key]: parsedVal });
+    console.log(pc11.green(`\u2713 Updated config ${key} = ${JSON.stringify(parsedVal)}`));
+  }
+}
+
 // src/cli/index.ts
 var program = new Command();
 program.name("24x7ai").description("Universal Agent Fleet Controller \u2014 1 package, 1 vps, 1 command").version("2.0.0-alpha.1");
@@ -2667,6 +2707,9 @@ program.command("cron [dir] [pipelineSchedule] [superviseSchedule]").description
 });
 program.command("doctor").description("Run system diagnostic check for host dependencies").action(async () => {
   await runDoctor();
+});
+program.command("config <action> [key] [val]").description("Inspect or modify configuration (get, set, list)").option("-d, --dir <dir>", "Projects directory").action((action, key, val, opts) => {
+  runConfigCommand(action, key, val, opts.dir);
 });
 program.parseAsync(process.argv).catch((err) => {
   console.error(`Error: ${err.message}`);

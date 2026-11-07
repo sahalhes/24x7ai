@@ -10,6 +10,7 @@ import { runLogs } from './commands/logs.js';
 import { runSetIdeas } from './commands/set-ideas.js';
 import { installFleetCron } from './commands/cron.js';
 import { runDoctor } from './commands/doctor.js';
+import { runConfigCommand } from './commands/config.js';
 
 const program = new Command();
 
@@ -100,6 +101,14 @@ program
   .description('Run system diagnostic check for host dependencies')
   .action(async () => {
     await runDoctor();
+  });
+
+program
+  .command('config <action> [key] [val]')
+  .description('Inspect or modify configuration (get, set, list)')
+  .option('-d, --dir <dir>', 'Projects directory')
+  .action((action, key, val, opts) => {
+    runConfigCommand(action as any, key, val, opts.dir);
   });
 
 program.parseAsync(process.argv).catch((err) => {
