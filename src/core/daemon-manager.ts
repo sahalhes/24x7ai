@@ -65,6 +65,13 @@ export class DaemonManager {
     return project;
   }
 
+  restart(identifier: string | number): ProjectRecord {
+    const project = this.resolveProject(identifier);
+    this.store.updateDaemonStatus(project.id, 'idle', { backoffUntil: '' });
+    this.logger.info(`Restarted daemon for ${project.slug} (cleared backoff/errors)`);
+    return project;
+  }
+
   resume(identifier: string | number): ProjectRecord {
     const project = this.resolveProject(identifier);
     this.store.updateDaemonStatus(project.id, 'idle');

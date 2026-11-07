@@ -1925,6 +1925,12 @@ var DaemonManager = class {
     this.logger.info(`Paused daemon for ${project.slug} (sl_no: ${project.sl_no})`);
     return project;
   }
+  restart(identifier) {
+    const project = this.resolveProject(identifier);
+    this.store.updateDaemonStatus(project.id, "idle", { backoffUntil: "" });
+    this.logger.info(`Restarted daemon for ${project.slug} (cleared backoff/errors)`);
+    return project;
+  }
   resume(identifier) {
     const project = this.resolveProject(identifier);
     this.store.updateDaemonStatus(project.id, "idle");
@@ -2467,6 +2473,9 @@ Active Fleet Daemons: ${root}`));
     } else if (action === "pause") {
       const p = daemonManager.pause(identifier);
       console.log(pc6.gray(`\u2713 Paused daemon for ${p.slug} (sl_no: ${p.sl_no})`));
+    } else if (action === "restart") {
+      const p = daemonManager.restart(identifier);
+      console.log(pc6.green(`\u2713 Restarted daemon for ${p.slug} (sl_no: ${p.sl_no})`));
     } else if (action === "resume") {
       const p = daemonManager.resume(identifier);
       console.log(pc6.green(`\u2713 Resumed daemon for ${p.slug} (sl_no: ${p.sl_no})`));
@@ -2702,7 +2711,7 @@ program.command("fleet [dir]").description("Launch the live Ink TUI Fleet Contro
 program.command("status [dir]").description("Display fleet status table and recent runs").option("--json", "Output fleet status in JSON format").action((dir, opts) => {
   runStatus(dir, opts);
 });
-program.command("daemon <action> [target]").description("Manage per-project daemons (start, stop, pause, resume, run, supervise, list)").option("-d, --dir <dir>", "Projects directory").action(async (action, target, opts) => {
+program.command("daemon <action> [target]").description("Manage per-project daemons (start, stop, pause, resume, restart, run, supervise, list)").option("-d, --dir <dir>", "Projects directory").action(async (action, target, opts) => {
   await handleDaemonCommand(action, target, { projectsDir: opts.dir });
 });
 program.command("supervise [dir]").description("Run a supervision pass across all active project daemons").action(async (dir) => {
