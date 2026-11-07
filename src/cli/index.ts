@@ -42,8 +42,9 @@ program
 program
   .command('status [dir]')
   .description('Display fleet status table and recent runs')
-  .action((dir) => {
-    runStatus(dir);
+  .option('--json', 'Output fleet status in JSON format')
+  .action((dir, opts) => {
+    runStatus(dir, opts);
   });
 
 program

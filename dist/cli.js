@@ -2371,7 +2371,16 @@ async function runFleetTui(projectsDir) {
 
 // src/cli/commands/status.ts
 import pc5 from "picocolors";
-function runStatus(projectsDir) {
+function runStatus(projectsDir, options) {
+  if (options?.json) {
+    const root2 = resolveProjectsRoot(projectsDir);
+    const db2 = getDb(root2);
+    const store2 = new FleetStore(db2);
+    const summary2 = store2.getFleetSummary();
+    const projects2 = store2.listProjects();
+    console.log(JSON.stringify({ summary: summary2, projects: projects2 }, null, 2));
+    return;
+  }
   const root = resolveProjectsRoot(projectsDir);
   const db = getDb(root);
   const store = new FleetStore(db);
@@ -2585,8 +2594,8 @@ program.command("run [dir]").description("Run the serial MVP pipeline to process
 program.command("fleet [dir]").description("Launch the live Ink TUI Fleet Controller dashboard").action(async (dir) => {
   await runFleetTui(dir);
 });
-program.command("status [dir]").description("Display fleet status table and recent runs").action((dir) => {
-  runStatus(dir);
+program.command("status [dir]").description("Display fleet status table and recent runs").option("--json", "Output fleet status in JSON format").action((dir, opts) => {
+  runStatus(dir, opts);
 });
 program.command("daemon <action> [target]").description("Manage per-project daemons (start, stop, pause, resume, run, supervise, list)").option("-d, --dir <dir>", "Projects directory").action(async (action, target, opts) => {
   await handleDaemonCommand(action, target, { projectsDir: opts.dir });
