@@ -2818,6 +2818,26 @@ function runRestore(backupFile, projectsDir) {
   console.log(pc13.green(`\u2713 Restored database from ${backupFile} to ${dbPath}`));
 }
 
+// src/cli/commands/export.ts
+import fs15 from "fs";
+import path17 from "path";
+import pc14 from "picocolors";
+function runExport(dest, options) {
+  const root = resolveProjectsRoot(options?.projectsDir);
+  const db = getDb(root);
+  const store = new FleetStore(db);
+  const projects = store.listProjects();
+  const data = JSON.stringify(projects, null, 2);
+  if (dest) {
+    const full = path17.resolve(dest);
+    fs15.mkdirSync(path17.dirname(full), { recursive: true });
+    fs15.writeFileSync(full, data + "\n");
+    console.log(pc14.green(`\u2713 Exported ${projects.length} projects to ${full}`));
+  } else {
+    console.log(data);
+  }
+}
+
 // src/cli/index.ts
 var program = new Command();
 program.name("24x7ai").description("Universal Agent Fleet Controller \u2014 1 package, 1 vps, 1 command").version("2.0.0-alpha.1");
@@ -2865,6 +2885,9 @@ program.command("backup [dir] [dest]").description("Create a timestamped snapsho
 });
 program.command("restore <file> [dir]").description("Restore fleet database from snapshot backup").action((file, dir) => {
   runRestore(file, dir);
+});
+program.command("export [dest]").description("Export fleet projects and metadata to JSON file or stdout").option("-d, --dir <dir>", "Projects directory").action((dest, opts) => {
+  runExport(dest, { projectsDir: opts.dir });
 });
 program.parseAsync(process.argv).catch((err) => {
   console.error(`Error: ${err.message}`);
