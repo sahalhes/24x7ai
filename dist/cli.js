@@ -1021,6 +1021,16 @@ function getDb(projectsRoot) {
   activeDbPath = dbPath;
   return activeDb;
 }
+function closeDb() {
+  if (activeDb) {
+    try {
+      activeDb.close();
+    } catch {
+    }
+    activeDb = null;
+    activeDbPath = null;
+  }
+}
 
 // src/state/queries.ts
 var FleetStore = class {
@@ -2772,6 +2782,38 @@ function runClean(projectsDir) {
   console.log(pc12.green(`\u2713 Cleaned ${removedLocks} stale lockfiles in ${root}`));
 }
 
+// src/cli/commands/backup.ts
+import fs14 from "fs";
+import path16 from "path";
+import pc13 from "picocolors";
+function runBackup(projectsDir, dest) {
+  const root = resolveProjectsRoot(projectsDir);
+  const dbPath = getDbPath(root);
+  if (!fs14.existsSync(dbPath)) {
+    console.error(pc13.red(`Database not found at ${dbPath}`));
+    process.exitCode = 1;
+    return;
+  }
+  const timestamp = (/* @__PURE__ */ new Date()).toISOString().replace(/[:.]/g, "-");
+  const target = dest || path16.join(root, ".24x7ai", `fleet-backup-${timestamp}.db`);
+  fs14.mkdirSync(path16.dirname(target), { recursive: true });
+  fs14.copyFileSync(dbPath, target);
+  console.log(pc13.green(`\u2713 Backup saved to: ${target}`));
+}
+function runRestore(backupFile, projectsDir) {
+  const root = resolveProjectsRoot(projectsDir);
+  const dbPath = getDbPath(root);
+  if (!fs14.existsSync(backupFile)) {
+    console.error(pc13.red(`Backup file not found: ${backupFile}`));
+    process.exitCode = 1;
+    return;
+  }
+  closeDb();
+  fs14.copyFileSync(backupFile, dbPath);
+  initDb(dbPath);
+  console.log(pc13.green(`\u2713 Restored database from ${backupFile} to ${dbPath}`));
+}
+
 // src/cli/index.ts
 var program = new Command();
 program.name("24x7ai").description("Universal Agent Fleet Controller \u2014 1 package, 1 vps, 1 command").version("2.0.0-alpha.1");
@@ -2813,6 +2855,12 @@ program.command("config <action> [key] [val]").description("Inspect or modify co
 });
 program.command("clean [dir]").description("Purge stale lockfiles and temporary execution state").action((dir) => {
   runClean(dir);
+});
+program.command("backup [dir] [dest]").description("Create a timestamped snapshot backup of fleet database").action((dir, dest) => {
+  runBackup(dir, dest);
+});
+program.command("restore <file> [dir]").description("Restore fleet database from snapshot backup").action((file, dir) => {
+  runRestore(file, dir);
 });
 program.parseAsync(process.argv).catch((err) => {
   console.error(`Error: ${err.message}`);
