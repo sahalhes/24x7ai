@@ -3,6 +3,12 @@ import { parseIdeasCsv, generateSlug } from '../src/csv/parser.js';
 import { convertGoogleSheetsUrl } from '../src/csv/sources.js';
 
 describe('CSV Parser', () => {
+  it('parses semicolon-delimited CSVs', () => {
+    const semi = "Sl No;Idea;Agent Automatable\n1;EU Invoice Generator;YES\n";
+    const ideas = parseIdeasCsv(semi);
+    expect(ideas).toHaveLength(1);
+    expect(ideas[0].slug).toBe('eu-invoice-generator');
+  });
   it('parses tab-separated values (TSV)', () => {
     const tsv = "Sl No\tIdea\tAgent Automatable\n1\tDistributed Cache Service\tYES\n";
     const ideas = parseIdeasCsv(tsv);
