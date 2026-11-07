@@ -13,6 +13,7 @@ export interface GitHubConfig {
   autoPush?: boolean;
   autoPr?: boolean;
   issueFilterLabel?: string;
+  draftPr?: boolean;
 }
 
 export interface AppConfig {

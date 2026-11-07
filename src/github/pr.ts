@@ -7,6 +7,7 @@ export async function createPullRequest(
     body: string;
     base?: string;
     head?: string;
+    draft?: boolean;
   }
 ): Promise<{ success: boolean; url?: string; error?: string }> {
   return new Promise((resolve) => {
@@ -15,7 +16,7 @@ export async function createPullRequest(
       '--title', opts.title,
       '--body', opts.body,
       '--base', opts.base || 'main',
-      '--head', opts.head || 'dev',
+      '--head', opts.head || 'dev', ...(opts.draft ? ['--draft'] : []),
     ];
 
     const proc = spawn('gh', args, { cwd: projectDir });
