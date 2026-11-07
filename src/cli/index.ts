@@ -12,6 +12,7 @@ import { installFleetCron } from './commands/cron.js';
 import { runDoctor } from './commands/doctor.js';
 import { runConfigCommand } from './commands/config.js';
 import { runClean } from './commands/clean.js';
+import { runBackup, runRestore } from './commands/backup.js';
 
 const program = new Command();
 
@@ -118,6 +119,20 @@ program
   .description('Purge stale lockfiles and temporary execution state')
   .action((dir) => {
     runClean(dir);
+  });
+
+program
+  .command('backup [dir] [dest]')
+  .description('Create a timestamped snapshot backup of fleet database')
+  .action((dir, dest) => {
+    runBackup(dir, dest);
+  });
+
+program
+  .command('restore <file> [dir]')
+  .description('Restore fleet database from snapshot backup')
+  .action((file, dir) => {
+    runRestore(file, dir);
   });
 
 program.parseAsync(process.argv).catch((err) => {
