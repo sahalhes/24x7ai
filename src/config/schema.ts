@@ -32,6 +32,7 @@ export interface AppConfig {
   gitUserName?: string;
   gitUserEmail?: string;
   otari: GatewayConfig;
+  customEnv?: Record<string, string>;
   webhookUrl?: string;
   promptPrefix?: string;
   promptSuffix?: string;
