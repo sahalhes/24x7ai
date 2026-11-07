@@ -54,6 +54,35 @@ export class FleetStore {
     return row ? this.mapProject(row) : null;
   }
 
+  searchProjects(keyword: string): ProjectWithDaemon[] {
+    const pattern = `%${keyword}%`;
+    const rows = this.db.prepare(`
+      SELECT 
+        p.*,
+        d.status as daemon_status,
+        d.next_run_at,
+        d.consecutive_errors,
+        r.started_at as last_run_started_at,
+        r.duration_ms as last_run_duration_ms,
+        r.commits_produced as last_run_commits
+      FROM projects p
+      LEFT JOIN daemon_state d ON d.project_id = p.id
+      LEFT JOIN agent_runs r ON r.id = d.last_run_id
+      WHERE p.slug LIKE ? OR p.idea LIKE ?
+      ORDER BY p.sl_no ASC
+    `).all(pattern, pattern) as any[];
+
+    return rows.map(r => ({
+      ...this.mapProject(r),
+      daemon_status: r.daemon_status || 'idle',
+      next_run_at: r.next_run_at || undefined,
+      consecutive_errors: r.consecutive_errors || 0,
+      last_run_started_at: r.last_run_started_at || undefined,
+      last_run_duration_ms: r.last_run_duration_ms || undefined,
+      last_run_commits: r.last_run_commits || 0,
+    }));
+  }
+
   getProjectBySlNo(slNo: number): ProjectRecord | null {
     const row = this.db.prepare('SELECT * FROM projects WHERE sl_no = ?').get(slNo) as any;
     return row ? this.mapProject(row) : null;

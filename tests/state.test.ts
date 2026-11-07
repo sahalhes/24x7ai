@@ -7,6 +7,18 @@ import path from 'node:path';
 import os from 'node:os';
 
 describe('SQLite FleetStore', () => {
+  it('searches projects by keyword in slug or idea', () => {
+    store.upsertProject({ slug: 'crypto-watcher', idea: 'Realtime Tracker', sl_no: 10 });
+    store.upsertProject({ slug: 'recipe-box', idea: 'Cooking Assistant', sl_no: 11 });
+
+    const results = store.searchProjects('recipe');
+    expect(results).toHaveLength(1);
+    expect(results[0].slug).toBe('recipe-box');
+
+    const byIdea = store.searchProjects('Tracker');
+    expect(byIdea).toHaveLength(1);
+    expect(byIdea[0].slug).toBe('crypto-watcher');
+  });
   let tmpDir: string;
   let db: Database.Database;
   let store: FleetStore;
