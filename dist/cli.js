@@ -1074,6 +1074,10 @@ var FleetStore = class {
     const row = this.db.prepare("SELECT * FROM projects WHERE id = ?").get(id);
     return row ? this.mapProject(row) : null;
   }
+  deleteProject(id) {
+    const res = this.db.prepare("DELETE FROM projects WHERE id = ?").run(id);
+    return res.changes > 0;
+  }
   searchProjects(keyword) {
     const pattern = `%${keyword}%`;
     const rows = this.db.prepare(`

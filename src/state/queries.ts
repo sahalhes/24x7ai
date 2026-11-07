@@ -54,6 +54,11 @@ export class FleetStore {
     return row ? this.mapProject(row) : null;
   }
 
+  deleteProject(id: number): boolean {
+    const res = this.db.prepare('DELETE FROM projects WHERE id = ?').run(id);
+    return res.changes > 0;
+  }
+
   searchProjects(keyword: string): ProjectWithDaemon[] {
     const pattern = `%${keyword}%`;
     const rows = this.db.prepare(`
