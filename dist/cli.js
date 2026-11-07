@@ -2497,6 +2497,21 @@ async function handleAdapterCommand(action, name, options) {
     console.log("");
     return;
   }
+  if (action === "info") {
+    if (!name) {
+      console.error(pc7.red("Error: Adapter name is required for 'adapter info <name>'"));
+      process.exitCode = 1;
+      return;
+    }
+    const adapter = defaultRegistry.get(name);
+    const available = await adapter.detect();
+    console.log(pc7.cyan(`
+Adapter: ${adapter.name}`));
+    console.log(`  Description: ${adapter.description}`);
+    console.log(`  Available:   ${available ? pc7.green("YES") : pc7.red("NO")}
+`);
+    return;
+  }
   if (action === "test") {
     if (!name) {
       console.error(pc7.red("Error: Adapter name is required for 'adapter test <name>'"));
@@ -2693,7 +2708,7 @@ program.command("daemon <action> [target]").description("Manage per-project daem
 program.command("supervise [dir]").description("Run a supervision pass across all active project daemons").action(async (dir) => {
   await handleDaemonCommand("supervise", void 0, { projectsDir: dir });
 });
-program.command("adapter <action> [name]").description("Inspect or test agent adapters (list, test)").option("-d, --dir <dir>", "Projects directory").action(async (action, name, opts) => {
+program.command("adapter <action> [name]").description("Inspect or test agent adapters (list, test, info)").option("-d, --dir <dir>", "Projects directory").action(async (action, name, opts) => {
   await handleAdapterCommand(action, name, { projectsDir: opts.dir });
 });
 program.command("logs [target]").description("Follow or view fleet or project agent logs").option("-f, --follow", "Follow log stream").option("-d, --dir <dir>", "Projects directory").action((target, opts) => {

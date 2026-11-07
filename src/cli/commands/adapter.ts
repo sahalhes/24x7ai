@@ -3,7 +3,7 @@ import { defaultRegistry } from '../../adapters/registry.js';
 import { resolveProjectsRoot } from '../../config/loader.js';
 
 export async function handleAdapterCommand(
-  action: 'list' | 'test',
+  action: 'list' | 'test' | 'info',
   name?: string,
   options?: { projectsDir?: string }
 ): Promise<void> {
@@ -16,6 +16,20 @@ export async function handleAdapterCommand(
       console.log(`  ${pc.bold(item.adapter.name.padEnd(14))} ${status.padEnd(16)} ${item.adapter.description}`);
     }
     console.log('');
+    return;
+  }
+
+  if (action === 'info') {
+    if (!name) {
+      console.error(pc.red("Error: Adapter name is required for 'adapter info <name>'"));
+      process.exitCode = 1;
+      return;
+    }
+    const adapter = defaultRegistry.get(name);
+    const available = await adapter.detect();
+    console.log(pc.cyan(`\nAdapter: ${adapter.name}`));
+    console.log(`  Description: ${adapter.description}`);
+    console.log(`  Available:   ${available ? pc.green('YES') : pc.red('NO')}\n`);
     return;
   }
 
