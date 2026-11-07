@@ -26,6 +26,7 @@ export interface AppConfig {
   daemonSchedule: string;
   stuckTimeoutMs: number;
   stuckConsecutiveNoChanges: number;
+  maxConsecutiveErrors: number;
   github: GitHubConfig;
   gitUserName?: string;
   gitUserEmail?: string;
@@ -45,6 +46,7 @@ export const DEFAULT_CONFIG: AppConfig = {
   daemonSchedule: '*/30 * * * *',
   stuckTimeoutMs: 30 * 60 * 1000, // 30 minutes
   stuckConsecutiveNoChanges: 3,
+  maxConsecutiveErrors: 5,
   github: {
     privateRepos: true,
     autoPush: true,

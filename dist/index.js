@@ -9,6 +9,7 @@ var DEFAULT_CONFIG = {
   stuckTimeoutMs: 30 * 60 * 1e3,
   // 30 minutes
   stuckConsecutiveNoChanges: 3,
+  maxConsecutiveErrors: 5,
   github: {
     privateRepos: true,
     autoPush: true,
