@@ -1786,6 +1786,12 @@ var DaemonManager = class {
     this.logger.info(`Paused daemon for ${project.slug} (sl_no: ${project.sl_no})`);
     return project;
   }
+  restart(identifier) {
+    const project = this.resolveProject(identifier);
+    this.store.updateDaemonStatus(project.id, "idle", { backoffUntil: "" });
+    this.logger.info(`Restarted daemon for ${project.slug} (cleared backoff/errors)`);
+    return project;
+  }
   resume(identifier) {
     const project = this.resolveProject(identifier);
     this.store.updateDaemonStatus(project.id, "idle");

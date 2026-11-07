@@ -5,7 +5,7 @@ import { FleetStore } from '../../state/queries.js';
 import { DaemonManager } from '../../core/daemon-manager.js';
 
 export async function handleDaemonCommand(
-  action: 'start' | 'stop' | 'pause' | 'resume' | 'run' | 'supervise' | 'list',
+  action: 'start' | 'stop' | 'pause' | 'resume' | 'restart' | 'run' | 'supervise' | 'list',
   identifier?: string,
   options?: { projectsDir?: string }
 ): Promise<void> {
@@ -50,6 +50,9 @@ export async function handleDaemonCommand(
     } else if (action === 'pause') {
       const p = daemonManager.pause(identifier);
       console.log(pc.gray(`✓ Paused daemon for ${p.slug} (sl_no: ${p.sl_no})`));
+    } else if (action === 'restart') {
+      const p = daemonManager.restart(identifier);
+      console.log(pc.green(`✓ Restarted daemon for ${p.slug} (sl_no: ${p.sl_no})`));
     } else if (action === 'resume') {
       const p = daemonManager.resume(identifier);
       console.log(pc.green(`✓ Resumed daemon for ${p.slug} (sl_no: ${p.sl_no})`));
