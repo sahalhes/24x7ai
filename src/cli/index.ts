@@ -11,6 +11,7 @@ import { runSetIdeas } from './commands/set-ideas.js';
 import { installFleetCron } from './commands/cron.js';
 import { runDoctor } from './commands/doctor.js';
 import { runConfigCommand } from './commands/config.js';
+import { runClean } from './commands/clean.js';
 
 const program = new Command();
 
@@ -110,6 +111,13 @@ program
   .option('-d, --dir <dir>', 'Projects directory')
   .action((action, key, val, opts) => {
     runConfigCommand(action as any, key, val, opts.dir);
+  });
+
+program
+  .command('clean [dir]')
+  .description('Purge stale lockfiles and temporary execution state')
+  .action((dir) => {
+    runClean(dir);
   });
 
 program.parseAsync(process.argv).catch((err) => {

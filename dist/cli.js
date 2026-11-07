@@ -2737,6 +2737,41 @@ function runConfigCommand(action, key, value, projectsDir) {
   }
 }
 
+// src/cli/commands/clean.ts
+import fs13 from "fs";
+import path15 from "path";
+import pc12 from "picocolors";
+function runClean(projectsDir) {
+  const root = resolveProjectsRoot(projectsDir);
+  const lockDir = path15.join(root, ".24x7ai", "locks");
+  let removedLocks = 0;
+  if (fs13.existsSync(lockDir)) {
+    for (const file of fs13.readdirSync(lockDir)) {
+      if (file.endsWith(".lock")) {
+        const full = path15.join(lockDir, file);
+        try {
+          const content = fs13.readFileSync(full, "utf8");
+          const pid = parseInt(content.split("\n")[0], 10);
+          let isRunning = false;
+          if (!isNaN(pid)) {
+            try {
+              process.kill(pid, 0);
+              isRunning = true;
+            } catch {
+            }
+          }
+          if (!isRunning) {
+            fs13.unlinkSync(full);
+            removedLocks++;
+          }
+        } catch {
+        }
+      }
+    }
+  }
+  console.log(pc12.green(`\u2713 Cleaned ${removedLocks} stale lockfiles in ${root}`));
+}
+
 // src/cli/index.ts
 var program = new Command();
 program.name("24x7ai").description("Universal Agent Fleet Controller \u2014 1 package, 1 vps, 1 command").version("2.0.0-alpha.1");
@@ -2775,6 +2810,9 @@ program.command("doctor").description("Run system diagnostic check for host depe
 });
 program.command("config <action> [key] [val]").description("Inspect or modify configuration (get, set, list)").option("-d, --dir <dir>", "Projects directory").action((action, key, val, opts) => {
   runConfigCommand(action, key, val, opts.dir);
+});
+program.command("clean [dir]").description("Purge stale lockfiles and temporary execution state").action((dir) => {
+  runClean(dir);
 });
 program.parseAsync(process.argv).catch((err) => {
   console.error(`Error: ${err.message}`);
