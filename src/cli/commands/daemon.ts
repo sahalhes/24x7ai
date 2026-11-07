@@ -7,7 +7,7 @@ import { DaemonManager } from '../../core/daemon-manager.js';
 export async function handleDaemonCommand(
   action: 'start' | 'stop' | 'pause' | 'resume' | 'restart' | 'run' | 'supervise' | 'list',
   identifier?: string,
-  options?: { projectsDir?: string }
+  options?: { projectsDir?: string; status?: string }
 ): Promise<void> {
   const root = resolveProjectsRoot(options?.projectsDir);
   const config = loadConfig(root);
@@ -23,7 +23,10 @@ export async function handleDaemonCommand(
   }
 
   if (action === 'list') {
-    const projects = store.listProjects();
+    let projects = store.listProjects();
+    if (options?.status) {
+      projects = projects.filter(p => p.daemon_status === options.status);
+    }
     console.log(pc.cyan(`\nActive Fleet Daemons: ${root}`));
     for (const p of projects) {
       if (p.daemon_active) {
