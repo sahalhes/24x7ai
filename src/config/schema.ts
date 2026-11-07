@@ -30,6 +30,7 @@ export interface AppConfig {
   gitUserName?: string;
   gitUserEmail?: string;
   otari: GatewayConfig;
+  webhookUrl?: string;
   promptPrefix?: string;
   promptSuffix?: string;
   dryRun?: boolean;
