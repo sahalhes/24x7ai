@@ -3,6 +3,12 @@ import { parseIdeasCsv, generateSlug } from '../src/csv/parser.js';
 import { convertGoogleSheetsUrl } from '../src/csv/sources.js';
 
 describe('CSV Parser', () => {
+  it('parses tab-separated values (TSV)', () => {
+    const tsv = "Sl No\tIdea\tAgent Automatable\n1\tDistributed Cache Service\tYES\n";
+    const ideas = parseIdeasCsv(tsv);
+    expect(ideas).toHaveLength(1);
+    expect(ideas[0].slug).toBe('distributed-cache-service');
+  });
   it('generates clean URL-safe slugs', () => {
     expect(generateSlug('Universal Fleet Controller! 24x7')).toBe('universal-fleet-controller-24x7');
     expect(generateSlug('Recipe Sharing App (Mobile & Web)')).toBe('recipe-sharing-app-mobile-web');
