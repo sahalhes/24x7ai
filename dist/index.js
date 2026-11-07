@@ -1691,6 +1691,25 @@ async function fetchProjectIssues(projectDir, filterLabel) {
     proc.on("error", () => resolve([]));
   });
 }
+async function createProjectIssue(projectDir, opts) {
+  return new Promise((resolve) => {
+    const args = ["issue", "create", "--title", opts.title, "--body", opts.body];
+    if (opts.labels) {
+      for (const l of opts.labels) {
+        args.push("--label", l);
+      }
+    }
+    const proc = spawn9("gh", args, { cwd: projectDir });
+    let stdout = "";
+    proc.stdout.on("data", (d) => {
+      stdout += d.toString();
+    });
+    proc.on("close", (code) => {
+      resolve({ success: code === 0, url: code === 0 ? stdout.trim() : void 0 });
+    });
+    proc.on("error", () => resolve({ success: false }));
+  });
+}
 
 // src/github/pr.ts
 import { spawn as spawn10 } from "child_process";
@@ -2098,6 +2117,7 @@ export {
   computeBackoffUntil,
   computeNextRun,
   convertGoogleSheetsUrl,
+  createProjectIssue,
   createPullRequest,
   createWorktree,
   defaultRegistry,

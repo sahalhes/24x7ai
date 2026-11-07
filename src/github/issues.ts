@@ -32,3 +32,24 @@ export async function fetchProjectIssues(
     proc.on('error', () => resolve([]));
   });
 }
+
+export async function createProjectIssue(
+  projectDir: string,
+  opts: { title: string; body: string; labels?: string[] }
+): Promise<{ success: boolean; url?: string }> {
+  return new Promise((resolve) => {
+    const args = ['issue', 'create', '--title', opts.title, '--body', opts.body];
+    if (opts.labels) {
+      for (const l of opts.labels) {
+        args.push('--label', l);
+      }
+    }
+    const proc = spawn('gh', args, { cwd: projectDir });
+    let stdout = '';
+    proc.stdout.on('data', (d) => { stdout += d.toString(); });
+    proc.on('close', (code) => {
+      resolve({ success: code === 0, url: code === 0 ? stdout.trim() : undefined });
+    });
+    proc.on('error', () => resolve({ success: false }));
+  });
+}
