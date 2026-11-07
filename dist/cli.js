@@ -2416,7 +2416,10 @@ function runStatus(projectsDir, options) {
     const db2 = getDb(root2);
     const store2 = new FleetStore(db2);
     const summary2 = store2.getFleetSummary();
-    const projects2 = store2.listProjects();
+    let projects2 = store2.listProjects();
+    if (options?.limit && options.limit > 0) {
+      projects2 = projects2.slice(0, options.limit);
+    }
     console.log(JSON.stringify({ summary: summary2, projects: projects2 }, null, 2));
     return;
   }
@@ -2735,7 +2738,7 @@ program.command("run [dir]").description("Run the serial MVP pipeline to process
 program.command("fleet [dir]").description("Launch the live Ink TUI Fleet Controller dashboard").action(async (dir) => {
   await runFleetTui(dir);
 });
-program.command("status [dir]").description("Display fleet status table and recent runs").option("--json", "Output fleet status in JSON format").action((dir, opts) => {
+program.command("status [dir]").description("Display fleet status table and recent runs").option("--json", "Output fleet status in JSON format").option("-l, --limit <n>", "Limit number of projects shown", parseInt).action((dir, opts) => {
   runStatus(dir, opts);
 });
 program.command("daemon <action> [target]").description("Manage per-project daemons (start, stop, pause, resume, restart, run, supervise, list)").option("-d, --dir <dir>", "Projects directory").action(async (action, target, opts) => {
