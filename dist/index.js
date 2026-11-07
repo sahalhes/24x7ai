@@ -1800,6 +1800,18 @@ function computeBackoffUntil(consecutiveErrors, baseMs = 60 * 1e3) {
   const backoffMs = factor * baseMs;
   return new Date(Date.now() + backoffMs).toISOString();
 }
+function isValidCron(schedule) {
+  const parts = schedule.trim().split(/\s+/);
+  return parts.length === 5;
+}
+function describeSchedule(schedule) {
+  const trimmed = schedule.trim();
+  if (trimmed === "0 * * * *") return "Hourly at minute 0";
+  if (trimmed === "0 0 * * *") return "Daily at midnight";
+  const minMatch = trimmed.match(/^\*\/(\d+)\s+\*\s+\*\s+\*\s+\*$/);
+  if (minMatch) return `Every ${minMatch[1]} minutes`;
+  return `Custom schedule: ${schedule}`;
+}
 
 // src/core/daemon-manager.ts
 var DaemonManager = class {
@@ -2072,6 +2084,7 @@ export {
   createPullRequest,
   createWorktree,
   defaultRegistry,
+  describeSchedule,
   ensureDevBranch,
   ensureGitRepo,
   fetchIdeaSource,
@@ -2085,6 +2098,7 @@ export {
   getHeadCommit,
   initDb,
   isRunDue,
+  isValidCron,
   loadConfig,
   loadIdeas,
   parseIdeasCsv,

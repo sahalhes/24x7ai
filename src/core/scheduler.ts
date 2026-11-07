@@ -47,3 +47,17 @@ export function computeBackoffUntil(consecutiveErrors: number, baseMs = 60 * 100
   const backoffMs = factor * baseMs;
   return new Date(Date.now() + backoffMs).toISOString();
 }
+
+export function isValidCron(schedule: string): boolean {
+  const parts = schedule.trim().split(/\s+/);
+  return parts.length === 5;
+}
+
+export function describeSchedule(schedule: string): string {
+  const trimmed = schedule.trim();
+  if (trimmed === '0 * * * *') return 'Hourly at minute 0';
+  if (trimmed === '0 0 * * *') return 'Daily at midnight';
+  const minMatch = trimmed.match(/^\*\/(\d+)\s+\*\s+\*\s+\*\s+\*$/);
+  if (minMatch) return `Every ${minMatch[1]} minutes`;
+  return `Custom schedule: ${schedule}`;
+}

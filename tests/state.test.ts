@@ -2,11 +2,17 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import Database from 'better-sqlite3';
 import { initDb } from '../src/state/db.js';
 import { FleetStore } from '../src/state/queries.js';
+import { isValidCron, describeSchedule } from '../src/core/scheduler.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 
 describe('SQLite FleetStore', () => {
+  it('validates and describes cron schedules', () => {
+    expect(isValidCron('*/15 * * * *')).toBe(true);
+    expect(isValidCron('invalid')).toBe(false);
+    expect(describeSchedule('*/15 * * * *')).toBe('Every 15 minutes');
+  });
   it('searches projects by keyword in slug or idea', () => {
     store.upsertProject({ slug: 'crypto-watcher', idea: 'Realtime Tracker', sl_no: 10 });
     store.upsertProject({ slug: 'recipe-box', idea: 'Cooking Assistant', sl_no: 11 });
