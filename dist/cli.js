@@ -1494,6 +1494,12 @@ var OtariGateway = class {
 import fs6 from "fs";
 import path8 from "path";
 import pc3 from "picocolors";
+var isSilent = false;
+var isVerbose = false;
+function setLogVerbosity(opts) {
+  if (opts.silent) isSilent = true;
+  if (opts.verbose) isVerbose = true;
+}
 var Logger = class {
   constructor(logFilePath, prefix = "") {
     this.logFilePath = logFilePath;
@@ -1523,6 +1529,8 @@ var Logger = class {
     else if (level === "error") coloredLevel = pc3.red(coloredLevel);
     else coloredLevel = pc3.gray(coloredLevel);
     const consoleOutput = `${pc3.gray(timestamp)} ${coloredLevel.padEnd(5)} ${formattedPrefix}${message}`;
+    if (isSilent && level !== "error") return;
+    if (level === "debug" && !isVerbose) return;
     if (level === "error") {
       console.error(consoleOutput, ...meta);
     } else {
@@ -2866,7 +2874,10 @@ function runExport(dest, options) {
 
 // src/cli/index.ts
 var program = new Command();
-program.name("24x7ai").description("Universal Agent Fleet Controller \u2014 1 package, 1 vps, 1 command").version("2.0.0-alpha.1");
+program.name("24x7ai").description("Universal Agent Fleet Controller \u2014 1 package, 1 vps, 1 command").version("2.0.0-alpha.1").option("--silent", "Suppress all non-error output").option("--verbose", "Enable verbose debugging logs").hook("preAction", (thisCommand) => {
+  const opts = thisCommand.opts();
+  setLogVerbosity({ silent: opts.silent, verbose: opts.verbose });
+});
 program.command("init [dir]").description("Interactive guided setup for projects, ideas, adapters and schedules").action(async (dir) => {
   await runInit(dir);
 });

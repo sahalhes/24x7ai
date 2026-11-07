@@ -4,6 +4,14 @@ import pc from 'picocolors';
 
 export type LogLevel = 'debug' | 'info' | 'warn' | 'error';
 
+export let isSilent = false;
+export let isVerbose = false;
+
+export function setLogVerbosity(opts: { silent?: boolean; verbose?: boolean }): void {
+  if (opts.silent) isSilent = true;
+  if (opts.verbose) isVerbose = true;
+}
+
 export class Logger {
   constructor(private logFilePath?: string, private prefix = '') {}
 
@@ -36,6 +44,9 @@ export class Logger {
     else coloredLevel = pc.gray(coloredLevel);
 
     const consoleOutput = `${pc.gray(timestamp)} ${coloredLevel.padEnd(5)} ${formattedPrefix}${message}`;
+
+    if (isSilent && level !== 'error') return;
+    if (level === 'debug' && !isVerbose) return;
 
     if (level === 'error') {
       console.error(consoleOutput, ...meta);
