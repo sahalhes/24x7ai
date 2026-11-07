@@ -1673,7 +1673,8 @@ async function createPullRequest(projectDir, opts) {
       "--base",
       opts.base || "main",
       "--head",
-      opts.head || "dev"
+      opts.head || "dev",
+      ...opts.draft ? ["--draft"] : []
     ];
     const proc = spawn10("gh", args, { cwd: projectDir });
     let stdout = "";
