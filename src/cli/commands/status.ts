@@ -3,7 +3,16 @@ import { loadConfig, resolveProjectsRoot } from '../../config/loader.js';
 import { getDb } from '../../state/db.js';
 import { FleetStore } from '../../state/queries.js';
 
-export function runStatus(projectsDir?: string): void {
+export function runStatus(projectsDir?: string, options?: { json?: boolean }): void {
+  if (options?.json) {
+    const root = resolveProjectsRoot(projectsDir);
+    const db = getDb(root);
+    const store = new FleetStore(db);
+    const summary = store.getFleetSummary();
+    const projects = store.listProjects();
+    console.log(JSON.stringify({ summary, projects }, null, 2));
+    return;
+  }
   const root = resolveProjectsRoot(projectsDir);
   const db = getDb(root);
   const store = new FleetStore(db);
