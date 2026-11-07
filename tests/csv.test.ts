@@ -12,7 +12,7 @@ describe('CSV Parser', () => {
   it('parses valid CSV rows with various header names', () => {
     const csv = `Sl No,Idea,Agent Automatable
 1,Recipe Sharing Platform,YES
-2,Crypto Arbitrage Bot,NO
+2,Manual Hardware Assembly,NO
 3,Expense Tracker,YES
 `;
     const ideas = parseIdeasCsv(csv);
