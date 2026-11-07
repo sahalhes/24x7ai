@@ -67,7 +67,7 @@ program
 
 program
   .command('adapter <action> [name]')
-  .description('Inspect or test agent adapters (list, test)')
+  .description('Inspect or test agent adapters (list, test, info)')
   .option('-d, --dir <dir>', 'Projects directory')
   .action(async (action, name, opts) => {
     await handleAdapterCommand(action as any, name, { projectsDir: opts.dir });
