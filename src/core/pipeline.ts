@@ -18,6 +18,7 @@ export interface PipelineOptions {
   registry?: AdapterRegistry;
   logger?: Logger;
   slNo?: number; // optionally run specific idea sl_no
+  dryRun?: boolean;
 }
 
 export interface PipelineRunOutcome {
@@ -96,6 +97,10 @@ export class MvpPipeline {
 
     const selected = incomplete[0];
     this.logger.info(`Selected project Sl No ${selected.sl_no}: "${selected.idea}" (${selected.slug})`);
+    if (this.config.dryRun || (this as any).dryRun) {
+      this.logger.info(`[DRY RUN] Would execute MVP for Sl No ${selected.sl_no} (${selected.slug}) using adapter "${this.config.defaultAdapter}"`);
+      return null;
+    }
 
     const projectDir = path.join(this.config.projectsRoot, selected.slug);
     fs.mkdirSync(projectDir, { recursive: true });

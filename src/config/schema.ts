@@ -28,6 +28,7 @@ export interface AppConfig {
   stuckConsecutiveNoChanges: number;
   github: GitHubConfig;
   otari: GatewayConfig;
+  dryRun?: boolean;
 }
 
 export const DEFAULT_CONFIG: AppConfig = {

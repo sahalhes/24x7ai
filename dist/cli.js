@@ -1599,6 +1599,10 @@ var MvpPipeline = class {
     }
     const selected = incomplete[0];
     this.logger.info(`Selected project Sl No ${selected.sl_no}: "${selected.idea}" (${selected.slug})`);
+    if (this.config.dryRun || this.dryRun) {
+      this.logger.info(`[DRY RUN] Would execute MVP for Sl No ${selected.sl_no} (${selected.slug}) using adapter "${this.config.defaultAdapter}"`);
+      return null;
+    }
     const projectDir = path10.join(this.config.projectsRoot, selected.slug);
     fs8.mkdirSync(projectDir, { recursive: true });
     await ensureGitRepo(projectDir);
@@ -1701,6 +1705,7 @@ async function runMvpPipeline(projectsDir, options) {
   const root = resolveProjectsRoot(projectsDir);
   const config = loadConfig(root);
   if (options?.maxParallel) config.maxParallel = options.maxParallel;
+  if (options?.dryRun) config.dryRun = true;
   const db = getDb(root);
   const store = new FleetStore(db);
   const pipeline = new MvpPipeline({ config, store });
@@ -2632,7 +2637,7 @@ program.name("24x7ai").description("Universal Agent Fleet Controller \u2014 1 pa
 program.command("init [dir]").description("Interactive guided setup for projects, ideas, adapters and schedules").action(async (dir) => {
   await runInit(dir);
 });
-program.command("run [dir]").description("Run the serial MVP pipeline to process ideas from CSV").option("-p, --max-parallel <n>", "Maximum parallel executions", parseInt).action(async (dir, opts) => {
+program.command("run [dir]").description("Run the serial MVP pipeline to process ideas from CSV").option("-p, --max-parallel <n>", "Maximum parallel executions", parseInt).option("--dry-run", "Preview next eligible idea without executing agent").action(async (dir, opts) => {
   await runMvpPipeline(dir, opts);
 });
 program.command("fleet [dir]").description("Launch the live Ink TUI Fleet Controller dashboard").action(async (dir) => {

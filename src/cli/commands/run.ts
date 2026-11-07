@@ -4,10 +4,11 @@ import { getDb } from '../../state/db.js';
 import { FleetStore } from '../../state/queries.js';
 import { MvpPipeline } from '../../core/pipeline.js';
 
-export async function runMvpPipeline(projectsDir?: string, options?: { maxParallel?: number }): Promise<void> {
+export async function runMvpPipeline(projectsDir?: string, options?: { maxParallel?: number; dryRun?: boolean }): Promise<void> {
   const root = resolveProjectsRoot(projectsDir);
   const config = loadConfig(root);
   if (options?.maxParallel) config.maxParallel = options.maxParallel;
+  if (options?.dryRun) config.dryRun = true;
 
   const db = getDb(root);
   const store = new FleetStore(db);

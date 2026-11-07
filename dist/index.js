@@ -1488,6 +1488,10 @@ var MvpPipeline = class {
     }
     const selected = incomplete[0];
     this.logger.info(`Selected project Sl No ${selected.sl_no}: "${selected.idea}" (${selected.slug})`);
+    if (this.config.dryRun || this.dryRun) {
+      this.logger.info(`[DRY RUN] Would execute MVP for Sl No ${selected.sl_no} (${selected.slug}) using adapter "${this.config.defaultAdapter}"`);
+      return null;
+    }
     const projectDir = path8.join(this.config.projectsRoot, selected.slug);
     fs8.mkdirSync(projectDir, { recursive: true });
     await ensureGitRepo(projectDir);

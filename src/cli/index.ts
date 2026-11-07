@@ -29,6 +29,7 @@ program
   .command('run [dir]')
   .description('Run the serial MVP pipeline to process ideas from CSV')
   .option('-p, --max-parallel <n>', 'Maximum parallel executions', parseInt)
+  .option('--dry-run', 'Preview next eligible idea without executing agent')
   .action(async (dir, opts) => {
     await runMvpPipeline(dir, opts);
   });
