@@ -1095,7 +1095,12 @@ function parseIdeasCsv(csvContent) {
   }
   const records = parse(csvContent, {
     columns: true,
-    delimiter: csvContent.includes("	") && !csvContent.split("\n")[0].includes(",") ? "	" : ",",
+    delimiter: (() => {
+      const firstLine = csvContent.split("\n")[0] || "";
+      if (firstLine.includes("	") && !firstLine.includes(",")) return "	";
+      if (firstLine.includes(";") && !firstLine.includes(",")) return ";";
+      return ",";
+    })(),
     skip_empty_lines: true,
     trim: true,
     bom: true

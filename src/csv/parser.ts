@@ -50,7 +50,12 @@ export function parseIdeasCsv(csvContent: string): IdeaItem[] {
 
   const records = parse(csvContent, {
     columns: true,
-    delimiter: csvContent.includes('\t') && !csvContent.split('\n')[0].includes(',') ? '\t' : ',',
+    delimiter: (() => {
+      const firstLine = csvContent.split('\n')[0] || '';
+      if (firstLine.includes('\t') && !firstLine.includes(',')) return '\t';
+      if (firstLine.includes(';') && !firstLine.includes(',')) return ';';
+      return ',';
+    })(),
     skip_empty_lines: true,
     trim: true,
     bom: true,
