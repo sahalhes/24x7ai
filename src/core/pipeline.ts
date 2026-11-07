@@ -141,7 +141,7 @@ export class MvpPipeline {
       run_type: 'mvp',
     });
 
-    const gatewayEnv = this.otari.getAdapterEnv(selected.id, 'mvp');
+    const gatewayEnv = { ...this.otari.getAdapterEnv(selected.id, 'mvp'), ...(this.config.customEnv || {}) };
 
     // Run agent
     const result = await adapter.invoke({

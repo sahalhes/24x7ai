@@ -1568,7 +1568,7 @@ var MvpPipeline = class {
       prompt,
       run_type: "mvp"
     });
-    const gatewayEnv = this.otari.getAdapterEnv(selected.id, "mvp");
+    const gatewayEnv = { ...this.otari.getAdapterEnv(selected.id, "mvp"), ...this.config.customEnv || {} };
     const result = await adapter.invoke({
       projectDir,
       prompt,
