@@ -1444,6 +1444,15 @@ var OtariGateway = class {
     if (this.config.virtualKey) return this.config.virtualKey;
     return `otari-24x7ai-p${projectId}-${runType}`;
   }
+  async checkHealth() {
+    if (!this.config.enabled) return true;
+    try {
+      const resp = await fetch(`${this.getEndpoint()}/health`);
+      return resp.ok;
+    } catch {
+      return false;
+    }
+  }
   async checkBudget() {
     if (!this.config.enabled || !this.config.budgetCapUsd) {
       return { allowed: true };

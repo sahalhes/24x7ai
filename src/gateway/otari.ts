@@ -24,6 +24,16 @@ export class OtariGateway {
     return `otari-24x7ai-p${projectId}-${runType}`;
   }
 
+  async checkHealth(): Promise<boolean> {
+    if (!this.config.enabled) return true;
+    try {
+      const resp = await fetch(`${this.getEndpoint()}/health`);
+      return resp.ok;
+    } catch {
+      return false;
+    }
+  }
+
   async checkBudget(): Promise<{ allowed: boolean; remainingBudgetUsd?: number }> {
     if (!this.config.enabled || !this.config.budgetCapUsd) {
       return { allowed: true };
