@@ -1220,12 +1220,14 @@ function execGh(args, cwd) {
     proc.on("error", (err) => resolve({ code: 1, stdout: "", stderr: err.message }));
   });
 }
-async function ensureGitRepo(projectDir, defaultBranch = "main") {
+async function ensureGitRepo(projectDir, defaultBranch = "main", author) {
+  const name = author?.name || process.env.GIT_USER_NAME || "Autonomous Agent";
+  const email = author?.email || process.env.GIT_USER_EMAIL || "agent@localhost";
   const gitDir = path5.join(projectDir, ".git");
   if (!fs5.existsSync(gitDir)) {
     await execGit(["init", "-b", defaultBranch], projectDir);
-    await execGit(["config", "user.name", process.env.GIT_USER_NAME || "Autonomous Agent"], projectDir);
-    await execGit(["config", "user.email", process.env.GIT_USER_EMAIL || "agent@localhost"], projectDir);
+    await execGit(["config", "user.name", name], projectDir);
+    await execGit(["config", "user.email", email], projectDir);
   }
 }
 async function ensureDevBranch(projectDir) {
