@@ -8,6 +8,13 @@ import path from 'node:path';
 import os from 'node:os';
 
 describe('SQLite FleetStore', () => {
+  it('deletes project with cascade cleanup', () => {
+    const p = store.upsertProject({ slug: 'temp-p', idea: 'Temp Idea', sl_no: 99 });
+    expect(store.getProjectById(p.id)).not.toBeNull();
+    const deleted = store.deleteProject(p.id);
+    expect(deleted).toBe(true);
+    expect(store.getProjectById(p.id)).toBeNull();
+  });
   it('validates and describes cron schedules', () => {
     expect(isValidCron('*/15 * * * *')).toBe(true);
     expect(isValidCron('invalid')).toBe(false);
