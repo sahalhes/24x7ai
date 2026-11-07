@@ -13,6 +13,7 @@ import { runDoctor } from './commands/doctor.js';
 import { runConfigCommand } from './commands/config.js';
 import { runClean } from './commands/clean.js';
 import { runBackup, runRestore } from './commands/backup.js';
+import { runExport } from './commands/export.js';
 
 const program = new Command();
 
@@ -134,6 +135,14 @@ program
   .description('Restore fleet database from snapshot backup')
   .action((file, dir) => {
     runRestore(file, dir);
+  });
+
+program
+  .command('export [dest]')
+  .description('Export fleet projects and metadata to JSON file or stdout')
+  .option('-d, --dir <dir>', 'Projects directory')
+  .action((dest, opts) => {
+    runExport(dest, { projectsDir: opts.dir });
   });
 
 program.parseAsync(process.argv).catch((err) => {
