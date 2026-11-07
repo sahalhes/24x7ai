@@ -85,6 +85,12 @@ describe('SQLite FleetStore', () => {
     expect(daemonState?.consecutive_errors).toBe(0);
   });
 
+  it('calculates aggregate fleet stats accurately', () => {
+    const stats = store.getFleetStats();
+    expect(stats.totalRuns).toBeDefined();
+    expect(stats.totalCommits).toBeDefined();
+  });
+
   it('calculates fleet summary metrics accurately', () => {
     store.upsertProject({ slug: 'p1', idea: 'Idea 1', sl_no: 1, mvp_complete: true, daemon_active: true });
     store.upsertProject({ slug: 'p2', idea: 'Idea 2', sl_no: 2, mvp_complete: false, daemon_active: false });

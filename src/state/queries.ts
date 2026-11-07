@@ -273,6 +273,29 @@ export class FleetStore {
     };
   }
 
+  getFleetStats(): {
+    totalRuns: number;
+    totalCommits: number;
+    totalFilesChanged: number;
+    avgDurationMs: number;
+  } {
+    const row = this.db.prepare(`
+      SELECT
+        COUNT(id) as total_runs,
+        SUM(commits_produced) as total_commits,
+        SUM(files_changed) as total_files,
+        AVG(duration_ms) as avg_duration
+      FROM agent_runs
+    `).get() as any;
+
+    return {
+      totalRuns: row?.total_runs || 0,
+      totalCommits: row?.total_commits || 0,
+      totalFilesChanged: row?.total_files || 0,
+      avgDurationMs: Math.round(row?.avg_duration || 0),
+    };
+  }
+
   getFleetSummary(): {
     totalProjects: number;
     mvpCompleted: number;
