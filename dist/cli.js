@@ -2878,7 +2878,7 @@ function runExport(dest, options) {
 
 // src/cli/index.ts
 var program = new Command();
-program.name("24x7ai").description("Universal Agent Fleet Controller \u2014 1 package, 1 vps, 1 command").version("2.0.0-alpha.1").option("--silent", "Suppress all non-error output").option("--verbose", "Enable verbose debugging logs").hook("preAction", (thisCommand) => {
+program.name("24x7ai").description("Universal Agent Fleet Controller \u2014 1 package, 1 vps, 1 command").version("2.0.0-alpha.2").option("--silent", "Suppress all non-error output").option("--verbose", "Enable verbose debugging logs").hook("preAction", (thisCommand) => {
   const opts = thisCommand.opts();
   setLogVerbosity({ silent: opts.silent, verbose: opts.verbose });
 });

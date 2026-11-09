@@ -13,10 +13,10 @@ describe('CLI Integration Tests', () => {
     expect(res.stdout).toContain('doctor');
   });
 
-  it('displays version matching 2.0.0-alpha.1', () => {
+  it('displays version matching 2.0.0-alpha.2', () => {
     const res = spawnSync('node', [cliPath, '--version'], { encoding: 'utf8' });
     expect(res.status).toBe(0);
-    expect(res.stdout.trim()).toBe('2.0.0-alpha.1');
+    expect(res.stdout.trim()).toBe('2.0.0-alpha.2');
   });
 
   it('lists agent adapters', () => {

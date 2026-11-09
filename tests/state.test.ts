@@ -21,7 +21,7 @@ describe('SQLite FleetStore', () => {
     expect(describeSchedule('*/15 * * * *')).toBe('Every 15 minutes');
   });
   it('searches projects by keyword in slug or idea', () => {
-    store.upsertProject({ slug: 'crypto-watcher', idea: 'Realtime Tracker', sl_no: 10 });
+    store.upsertProject({ slug: 'metrics-watcher', idea: 'Realtime Tracker', sl_no: 10 });
     store.upsertProject({ slug: 'recipe-box', idea: 'Cooking Assistant', sl_no: 11 });
 
     const results = store.searchProjects('recipe');
@@ -30,7 +30,7 @@ describe('SQLite FleetStore', () => {
 
     const byIdea = store.searchProjects('Tracker');
     expect(byIdea).toHaveLength(1);
-    expect(byIdea[0].slug).toBe('crypto-watcher');
+    expect(byIdea[0].slug).toBe('metrics-watcher');
   });
   let tmpDir: string;
   let db: Database.Database;
