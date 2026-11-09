@@ -4,7 +4,7 @@
   "description": "Universal Agent Fleet Controller — 1 package, 1 vps, 1 command",
   "main": "./dist/index.js",
   "bin": {
-    "24x7ai": "./dist/cli.js"
+    "24x7ai": "dist/cli.js"
   },
   "scripts": {
     "build": "tsup",
