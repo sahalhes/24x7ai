@@ -21,7 +21,7 @@ const program = new Command();
 program
   .name('24x7ai')
   .description('Universal Agent Fleet Controller — 1 package, 1 vps, 1 command')
-  .version('2.0.0-alpha.2')
+  .version('2.0.0')
   .option('--silent', 'Suppress all non-error output')
   .option('--verbose', 'Enable verbose debugging logs')
   .hook('preAction', (thisCommand) => {
