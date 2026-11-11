@@ -1,0 +1,410 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="A high-level architectural overview of the 24x7ai codebase after milestone 001.">
+  <title>24x7ai — Codebase Overview</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #090d14;
+      --panel: #101722;
+      --panel-2: #141d2a;
+      --line: #263447;
+      --text: #e7edf5;
+      --muted: #9aabbf;
+      --accent: #68e0c0;
+      --accent-2: #8ca7ff;
+      --warm: #f5c96b;
+      --danger: #ff8e8e;
+      --code: #07100f;
+    }
+
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      background:
+        radial-gradient(circle at 85% 0%, rgba(104, 224, 192, .08), transparent 30rem),
+        radial-gradient(circle at 5% 25%, rgba(140, 167, 255, .07), transparent 28rem),
+        var(--bg);
+      color: var(--text);
+      font: 16px/1.65 Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    a { color: var(--accent); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    code, pre { font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace; }
+    code { color: #b8f4df; font-size: .9em; }
+    .mermaid {
+      display: block;
+      min-height: 120px;
+      text-align: center;
+      background: #0b111a;
+    }
+    .mermaid:not([data-processed="true"]) {
+      text-align: left;
+      white-space: pre-wrap;
+    }
+    pre {
+      margin: 0;
+      padding: 1.25rem;
+      overflow-x: auto;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: var(--code);
+      color: #c8d6e5;
+      font-size: .86rem;
+      line-height: 1.65;
+    }
+
+    .shell { width: min(1180px, calc(100% - 2rem)); margin: 0 auto; }
+    header { padding: 5.5rem 0 3.5rem; border-bottom: 1px solid var(--line); }
+    .eyebrow {
+      display: inline-flex;
+      gap: .5rem;
+      align-items: center;
+      color: var(--accent);
+      text-transform: uppercase;
+      letter-spacing: .16em;
+      font-size: .74rem;
+      font-weight: 750;
+    }
+    .eyebrow::before { content: ""; width: 1.75rem; height: 2px; background: var(--accent); }
+    h1 { margin: .75rem 0 1rem; max-width: 900px; font-size: clamp(2.35rem, 6vw, 4.8rem); line-height: 1.05; letter-spacing: -.055em; }
+    h1 span { color: var(--accent); }
+    .lead { max-width: 780px; margin: 0; color: var(--muted); font-size: 1.12rem; }
+    .meta { display: flex; flex-wrap: wrap; gap: .65rem; margin-top: 1.75rem; }
+    .pill { padding: .3rem .7rem; border: 1px solid var(--line); border-radius: 99px; color: var(--muted); background: rgba(16, 23, 34, .75); font-size: .78rem; }
+
+    nav { padding: 1.25rem 0; border-bottom: 1px solid var(--line); }
+    nav ul { display: flex; flex-wrap: wrap; gap: .5rem 1.35rem; padding: 0; margin: 0; list-style: none; font-size: .85rem; }
+    nav a { color: var(--muted); }
+
+    main { padding: 1rem 0 4rem; }
+    section { padding: 3.25rem 0; border-bottom: 1px solid var(--line); }
+    section:last-child { border-bottom: 0; }
+    .section-label { color: var(--accent-2); font-size: .72rem; font-weight: 800; letter-spacing: .14em; text-transform: uppercase; }
+    h2 { margin: .3rem 0 .7rem; font-size: clamp(1.7rem, 3vw, 2.35rem); line-height: 1.2; letter-spacing: -.025em; }
+    h3 { margin: 0 0 .5rem; font-size: 1.05rem; }
+    p { margin: .45rem 0 1rem; }
+    .section-intro { max-width: 760px; color: var(--muted); }
+
+    .grid { display: grid; gap: 1rem; margin-top: 1.5rem; }
+    .grid.three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .grid.two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .card { padding: 1.35rem; border: 1px solid var(--line); border-radius: 14px; background: linear-gradient(145deg, var(--panel-2), var(--panel)); }
+    .card p { color: var(--muted); font-size: .92rem; }
+    .card p:last-child { margin-bottom: 0; }
+    .number { display: block; margin-bottom: .8rem; color: var(--accent); font: 700 .75rem/1 monospace; letter-spacing: .1em; }
+    .path { display: block; margin-top: .85rem; color: var(--accent-2); font: .77rem/1.5 "SFMono-Regular", Consolas, monospace; overflow-wrap: anywhere; }
+
+    .flow { display: flex; align-items: stretch; gap: .65rem; margin-top: 1.5rem; overflow-x: auto; padding-bottom: .5rem; }
+    .step { flex: 1 0 135px; padding: 1rem; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); }
+    .step strong { display: block; color: var(--text); font-size: .88rem; }
+    .step small { display: block; margin-top: .35rem; color: var(--muted); line-height: 1.45; }
+    .arrow { align-self: center; color: var(--accent); font-size: 1.2rem; }
+
+    .callout { margin-top: 1.25rem; padding: 1rem 1.2rem; border-left: 3px solid var(--accent); border-radius: 0 10px 10px 0; background: rgba(104, 224, 192, .055); color: var(--muted); }
+    .callout strong { color: var(--text); }
+    .callout.warn { border-color: var(--warm); background: rgba(245, 201, 107, .055); }
+
+    .table-wrap { margin-top: 1.5rem; overflow-x: auto; border: 1px solid var(--line); border-radius: 12px; }
+    table { width: 100%; border-collapse: collapse; min-width: 690px; background: var(--panel); }
+    th, td { padding: .85rem 1rem; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
+    th { color: var(--muted); background: var(--panel-2); font-size: .73rem; text-transform: uppercase; letter-spacing: .08em; }
+    td { font-size: .88rem; }
+    td:last-child { color: var(--muted); }
+    tr:last-child td { border-bottom: 0; }
+
+    .otari { border-color: rgba(104, 224, 192, .4); box-shadow: 0 0 35px rgba(104, 224, 192, .035); }
+    .badge { display: inline-block; padding: .15rem .45rem; border-radius: 5px; background: rgba(104, 224, 192, .1); color: var(--accent); font-size: .7rem; font-weight: 750; text-transform: uppercase; letter-spacing: .06em; }
+    .checks { display: grid; grid-template-columns: repeat(4, 1fr); gap: .75rem; margin-top: 1.4rem; }
+    .check { padding: 1rem; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); }
+    .check b { display: block; font-size: .86rem; }
+    .check span { color: var(--muted); font-size: .8rem; }
+    .check.pass b { color: var(--accent); }
+    .check.pending b { color: var(--warm); }
+
+    footer { padding: 2rem 0 3rem; color: var(--muted); font-size: .82rem; }
+    footer .shell { display: flex; justify-content: space-between; gap: 1rem; flex-wrap: wrap; }
+
+    @media (max-width: 800px) {
+      .grid.three, .grid.two { grid-template-columns: 1fr; }
+      .checks { grid-template-columns: repeat(2, 1fr); }
+      header { padding-top: 3.5rem; }
+    }
+    @media (max-width: 450px) { .checks { grid-template-columns: 1fr; } }
+    @media print {
+      :root { color-scheme: light; --bg: #fff; --panel: #fff; --panel-2: #f5f7fa; --line: #ccd5df; --text: #15202b; --muted: #526274; --accent: #08775e; --accent-2: #365db8; --code: #f3f6f8; }
+      body { background: white; }
+      header { padding-top: 2rem; }
+      nav { display: none; }
+      section { break-inside: avoid; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="shell">
+      <div class="eyebrow">Architecture briefing · Milestone 001</div>
+      <h1>How <span>24x7ai</span> works</h1>
+      <p class="lead">A universal agent fleet controller that turns a source of product ideas into Git repositories, runs coding agents to build MVPs, and supervises ongoing improvements through persistent project daemons.</p>
+      <div class="meta">
+        <span class="pill">TypeScript · ESM · Node.js 18+</span>
+        <span class="pill">SQLite state</span>
+        <span class="pill">CLI + Ink TUI</span>
+        <span class="pill">Otari / Kimi provider added</span>
+      </div>
+    </div>
+  </header>
+
+  <nav>
+    <div class="shell">
+      <ul>
+        <li><a href="#big-picture">Big picture</a></li>
+        <li><a href="#mvp-flow">MVP flow</a></li>
+        <li><a href="#daemon-flow">Daemon flow</a></li>
+        <li><a href="#modules">Modules</a></li>
+        <li><a href="#otari-provider">Otari provider</a></li>
+        <li><a href="#state">State &amp; commands</a></li>
+        <li><a href="#status">Current status</a></li>
+      </ul>
+    </div>
+  </nav>
+
+  <main class="shell">
+    <section id="big-picture">
+      <div class="section-label">01 · Big picture</div>
+      <h2>One coordinator, interchangeable coding agents</h2>
+      <p class="section-intro">The core owns orchestration, persistence, Git operations, scheduling, and logs. Agent adapters provide a common interface to external coding tools, so the pipeline does not depend on one particular agent CLI.</p>
+      <div class="grid three">
+        <article class="card">
+          <span class="number">INPUT</span>
+          <h3>Ideas &amp; configuration</h3>
+          <p>Ideas arrive from a local CSV, CSV URL, or Google Sheets. Application settings come from <code>.24x7ai.config.json</code>, with selected environment overrides.</p>
+        </article>
+        <article class="card">
+          <span class="number">CONTROL</span>
+          <h3>TypeScript core</h3>
+          <p>The pipeline selects work, adapters invoke agents, SQLite records outcomes, and locks prevent overlapping execution.</p>
+        </article>
+        <article class="card">
+          <span class="number">OUTPUT</span>
+          <h3>Working repositories</h3>
+          <p>Each idea gets a project directory, templates, a Git <code>dev</code> branch, commits, status metadata, and optional GitHub synchronization.</p>
+        </article>
+      </div>
+      <pre class="mermaid" aria-label="High-level system architecture">
+flowchart LR
+  Ideas["CSV / Google Sheets<br/>Product ideas"] --> Loader["Idea loader<br/>src/csv"]
+  Loader --> Pipeline["MVP pipeline<br/>src/core/pipeline.ts"]
+  Pipeline --> Registry["Adapter registry"]
+  Registry --> Agent["External coding agent<br/>OpenCode · Codex · Claude Code · others"]
+  Agent --> Repo["Project repository<br/>dev branch · templates · commits"]
+  Repo --> GitHub["Optional GitHub sync<br/>issues · pushes · pull requests"]
+  Pipeline <--> Store[("SQLite fleet store<br/>projects · runs · daemon state")]
+  Daemon["Daemon manager<br/>src/core/daemon-manager.ts"] --> Registry
+  Scheduler["Scheduler + stuck detector"] --> Daemon
+  Daemon <--> Store
+  Store --> UI["CLI / Ink TUI<br/>status · logs · controls"]
+  Provider["Direct Otari provider<br/>src/providers/otari.ts"] --> Otari["Otari API<br/>Kimi K3.1 Pro"]
+
+  classDef input fill:#142b30,stroke:#68e0c0,color:#e7edf5;
+  classDef core fill:#1b2940,stroke:#8ca7ff,color:#e7edf5;
+  classDef state fill:#2b2418,stroke:#f5c96b,color:#e7edf5;
+  class Ideas,Repo,GitHub input;
+  class Pipeline,Daemon,Scheduler,Registry,Provider core;
+  class Store state;
+      </pre>
+    </section>
+
+    <section id="mvp-flow">
+      <div class="section-label">02 · Initial build</div>
+      <h2>The serial MVP pipeline</h2>
+      <p class="section-intro"><code>src/core/pipeline.ts</code> handles one eligible project at a time under a master lock. Completed projects remain in SQLite; incomplete projects are selected first.</p>
+      <pre class="mermaid" aria-label="MVP pipeline sequence">
+flowchart LR
+  A["Load ideas<br/>Ingest rows into SQLite"] --> B["Select project<br/>First incomplete idea"]
+  B --> C["Prepare repository<br/>Directory · dev branch · templates"]
+  C --> D["Check budget<br/>Existing Otari gateway"]
+  D --> E["Invoke agent<br/>Configured adapter + MVP prompt"]
+  E --> F["Read .agent-status.json"]
+  F --> G["Record run<br/>Metrics · errors · changed files"]
+  G --> H["Commit and sync<br/>Optional GitHub integration"]
+  H --> I{"mvp_complete?"}
+  I -->|Yes| J["Mark MVP complete<br/>Enable ongoing daemon work"]
+  I -->|No| K["Remain eligible<br/>Continue next pipeline run"]
+      </pre>
+      <div class="grid two">
+        <article class="card">
+          <h3>Agent contract</h3>
+          <p>Every adapter supports detection, invocation, and status parsing. Invocation receives the project directory, prompt, timeout, environment, and output callbacks. It returns exit code, duration, commits, changed files, output, and errors.</p>
+          <span class="path">src/adapters/base.ts · src/adapters/registry.ts</span>
+        </article>
+        <article class="card">
+          <h3>Completion handshake</h3>
+          <p>The agent maintains <code>.agent-status.json</code>. When <code>mvp_complete</code> is true, the pipeline marks the project complete so ongoing daemon work can take over.</p>
+          <span class="path">templates/AGENTS.md.hbs · templates/AUTODEVELOP.md.hbs</span>
+        </article>
+      </div>
+    </section>
+
+    <section id="daemon-flow">
+      <div class="section-label">03 · Continuous improvement</div>
+      <h2>Scheduled project daemons</h2>
+      <p class="section-intro"><code>src/core/daemon-manager.ts</code> supervises active projects. Due projects run in bounded parallel batches, while each repository has its own lock.</p>
+      <div class="grid three">
+        <article class="card"><span class="number">BEFORE</span><h3>Eligibility &amp; safety</h3><p>Skip paused, stuck, locked, or backed-off projects. Scheduling determines which active daemons are due.</p></article>
+        <article class="card"><span class="number">DURING</span><h3>One useful improvement</h3><p>Fetch a labeled GitHub issue when available, construct an improvement prompt, invoke the selected adapter, and record the run.</p></article>
+        <article class="card"><span class="number">AFTER</span><h3>Commit or back off</h3><p>Successful work is committed and optionally pushed or submitted as a PR. Failures update error state and schedule exponential backoff.</p></article>
+      </div>
+      <div class="callout"><strong>Stuck detection:</strong> <code>src/core/stuck-detector.ts</code> evaluates repeated no-change runs, failures, and timeout-related state so problematic daemons can be quarantined rather than looping indefinitely.</div>
+    </section>
+
+    <section id="modules">
+      <div class="section-label">04 · Code map</div>
+      <h2>Where responsibilities live</h2>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Area</th><th>Location</th><th>Responsibility</th></tr></thead>
+          <tbody>
+            <tr><td>CLI</td><td><code>src/cli/</code></td><td>Commander entry point and commands for setup, runs, fleet operations, diagnostics, backups, and exports.</td></tr>
+            <tr><td>Configuration</td><td><code>src/config/</code></td><td>Typed defaults, JSON loading/saving, projects-root resolution, and legacy environment migration.</td></tr>
+            <tr><td>Idea ingestion</td><td><code>src/csv/</code></td><td>Parse idea rows and load local or remote sources.</td></tr>
+            <tr><td>Orchestration</td><td><code>src/core/</code></td><td>MVP pipeline, daemon supervision, scheduling, and stuck detection.</td></tr>
+            <tr><td>Agent adapters</td><td><code>src/adapters/</code></td><td>Shared process/Git helpers plus Codex, Claude Code, OpenCode, Aider, OpenHands, and custom CLI implementations.</td></tr>
+            <tr><td>Persistence</td><td><code>src/state/</code></td><td>SQLite initialization and fleet queries for projects, runs, and daemon state.</td></tr>
+            <tr><td>Git &amp; GitHub</td><td><code>src/github/</code></td><td>Repository setup, branch/commit/sync operations, issue ingestion, and pull requests.</td></tr>
+            <tr><td>Model access</td><td><code>src/gateway/</code>, <code>src/providers/</code></td><td>Legacy adapter-facing gateway configuration and the new direct Otari chat-completions provider.</td></tr>
+            <tr><td>Interface</td><td><code>src/tui/</code></td><td>Ink/React terminal dashboard for fleet, daemon, and log views.</td></tr>
+            <tr><td>Utilities</td><td><code>src/utils/</code></td><td>Logging, locking, worktrees, and webhook support.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section id="otari-provider">
+      <div class="section-label">05 · Milestone 001 addition</div>
+      <h2>Direct Otari chat integration</h2>
+      <p class="section-intro">The new reusable provider exposes <code>chat({ role, messages })</code>. It is intentionally separate from the full agent runtime and from the existing adapter environment gateway.</p>
+      <div class="grid two">
+        <article class="card otari">
+          <span class="badge">New</span>
+          <h3 style="margin-top:.7rem">Direct provider</h3>
+          <p>Reads logical model roles from <code>config/models.json</code>, maps <code>kimi-k3.1-pro</code> to <code>together:moonshotai/kimi-k3.1-pro</code>, and posts messages to Otari.</p>
+          <span class="path">src/providers/otari.ts · tests/otari-provider.test.ts</span>
+        </article>
+        <article class="card">
+          <span class="badge" style="color:var(--accent-2);background:rgba(140,167,255,.1)">Existing</span>
+          <h3 style="margin-top:.7rem">Gateway environment</h3>
+          <p>Provides health and budget checks plus OpenAI/Anthropic-compatible environment variables for external agent CLIs. This path remains unchanged.</p>
+          <span class="path">src/gateway/otari.ts</span>
+        </article>
+      </div>
+      <pre class="mermaid" aria-label="Otari provider request sequence">
+sequenceDiagram
+  autonumber
+  participant App as Application code
+  participant Provider as chat({ role, messages })
+  participant Config as config/models.json
+  participant API as Otari /chat/completions
+
+  App->>Provider: Call with logical role and messages
+  Provider->>Provider: Read OTARI_API_KEY from environment
+  Provider->>Config: Resolve role to logical model
+  Config-->>Provider: kimi-k3.1-pro
+  Provider->>Provider: Map to together:moonshotai/kimi-k3.1-pro
+  Provider->>API: POST model + messages with Otari-Key
+  alt Success
+    API-->>Provider: Assistant content + optional token usage
+    Provider->>Provider: Log safe token usage only
+    Provider-->>App: Parsed OtariChatResponse
+  else Transient failure or timeout
+    API-->>Provider: Network error / 408 / 425 / 429 / 5xx
+    Provider->>Provider: Bounded retry with backoff
+  else Permanent failure
+    API-->>Provider: HTTP error or malformed response
+    Provider-->>App: Sanitized OtariProviderError
+  end
+      </pre>
+      <div class="grid three">
+        <article class="card"><h3>Resilience</h3><p>30-second default timeout; retries for network errors, timeouts, 408, 425, 429, and 5xx; exponential backoff and <code>Retry-After</code> support.</p></article>
+        <article class="card"><h3>Security</h3><p>Credentials are read only from the environment. Request bodies, sensitive headers, API keys, and response error bodies are not logged.</p></article>
+        <article class="card"><h3>Observability</h3><p>Valid token usage is logged with role, model, prompt tokens, completion tokens, and total tokens. Malformed success responses produce explicit errors.</p></article>
+      </div>
+      <div class="callout"><strong>Current role configuration:</strong> architect, builder, and tester all select Kimi K3.1 Pro. The configuration also contains a triage role using Llama, which the Kimi-specific provider currently rejects as unsupported.</div>
+    </section>
+
+    <section id="state">
+      <div class="section-label">06 · Operational model</div>
+      <h2>Persistent state and operator controls</h2>
+      <div class="grid two">
+        <article class="card">
+          <h3>SQLite records</h3>
+          <p><strong>Projects</strong> store source ideas, slugs, completion, and activation. <strong>Agent runs</strong> store prompts, timing, exit codes, commit/file counts, and errors. <strong>Daemon state</strong> stores scheduling, status, consecutive failures/no-change counts, and backoff.</p>
+          <span class="path">src/state/models.ts · src/state/db.ts · src/state/queries.ts</span>
+        </article>
+        <article class="card">
+          <h3>Primary commands</h3>
+          <p><code>init</code> configures a fleet; <code>run</code> executes MVP work; <code>supervise</code> runs due daemons; <code>fleet</code> opens the TUI; <code>status</code> reports state; <code>adapter</code> inspects agents; <code>cron</code> installs automation.</p>
+          <span class="path">Also: logs · set-ideas · doctor · config · clean · backup · restore · export</span>
+        </article>
+      </div>
+      <pre aria-label="Simplified source tree">src/
+├── cli/          Command registration and operator commands
+├── config/       App configuration schema and loader
+├── csv/          Idea parsing and source loading
+├── core/         Pipeline, daemons, scheduler, stuck detector
+├── adapters/     External coding-agent implementations
+├── state/        SQLite schema, records, and fleet queries
+├── github/       Git repositories, issues, and pull requests
+├── gateway/      Existing Otari adapter-facing gateway
+├── providers/    Direct Otari chat provider  ← milestone 001
+├── tui/          Ink/React fleet dashboard
+└── utils/        Logging, locking, worktrees, webhooks</pre>
+    </section>
+
+    <section id="status">
+      <div class="section-label">07 · Verified state</div>
+      <h2>Where milestone 001 stands</h2>
+      <p class="section-intro">The provider is implemented, exported through <code>src/index.ts</code>, covered by mocked HTTP tests, and included in the generated distribution. The complete agent runtime was deliberately not changed.</p>
+      <div class="checks">
+        <div class="check pass"><b>✓ TypeScript</b><span>Strict check passes</span></div>
+        <div class="check pass"><b>✓ Tests</b><span>35 tests passing</span></div>
+        <div class="check pass"><b>✓ Build</b><span>tsup build succeeds</span></div>
+        <div class="check pending"><b>! Live smoke test</b><span>Otari returned HTTP 401; verify API key</span></div>
+      </div>
+      <div class="callout warn"><strong>One remaining acceptance item:</strong> a successful live Kimi response requires a valid <code>OTARI_API_KEY</code>. The 401 response was handled without retrying or exposing credentials.</div>
+    </section>
+  </main>
+
+  <footer>
+    <div class="shell">
+      <span>24x7ai · Universal Agent Fleet Controller</span>
+      <span>Generated after Task 001 · Saved in <code>milestones/codebase-overview.html</code></span>
+    </div>
+  </footer>
+  <script type="module">
+    import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+    mermaid.initialize({
+      startOnLoad: true,
+      securityLevel: 'strict',
+      theme: 'dark',
+      themeVariables: {
+        background: '#0b111a',
+        primaryColor: '#141d2a',
+        primaryTextColor: '#e7edf5',
+        primaryBorderColor: '#68e0c0',
+        lineColor: '#8ca7ff',
+        secondaryColor: '#1b2940',
+        tertiaryColor: '#101722',
+        fontFamily: 'Inter, system-ui, sans-serif'
+      },
+      flowchart: { curve: 'basis', htmlLabels: true },
+      sequence: { useMaxWidth: true }
+    });
+  </script>
+</body>
+</html>

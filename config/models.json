@@ -1,0 +1,16 @@
+{
+  "roles": {
+    "architect": {
+      "primary": "kimi-k3.1-pro"
+    },
+    "builder": {
+      "primary": "kimi-k3.1-pro"
+    },
+    "tester": {
+      "primary": "kimi-k3.1-pro"
+    },
+    "triage": {
+      "primary": "llama-3.1-8b"
+    }
+  }
+}

@@ -2058,6 +2058,163 @@ ${issuePrompt || "General ongoing enhancement and test coverage."}`
   }
 };
 
+// src/providers/otari.ts
+import { readFileSync } from "fs";
+import path10 from "path";
+var OTARI_CHAT_URL = "https://otari.ai/api/v1/chat/completions";
+var DEFAULT_TIMEOUT_MS = 3e4;
+var DEFAULT_MAX_RETRIES = 2;
+var RETRY_BASE_DELAY_MS = 250;
+var OTARI_MODEL_IDS = {
+  "kimi-k3.1-pro": "together:moonshotai/kimi-k3.1-pro"
+};
+var OtariProviderError = class extends Error {
+  constructor(message, status, retryable = false) {
+    super(message);
+    this.status = status;
+    this.retryable = retryable;
+    this.name = "OtariProviderError";
+  }
+  status;
+  retryable;
+};
+function resolveModel(role) {
+  const configPath = path10.resolve(process.cwd(), "config", "models.json");
+  let config;
+  try {
+    config = JSON.parse(readFileSync(configPath, "utf8"));
+  } catch {
+    throw new OtariProviderError(`Unable to read model configuration at ${configPath}`);
+  }
+  const configuredModel = config.roles?.[role]?.primary;
+  if (typeof configuredModel !== "string" || !configuredModel) {
+    throw new OtariProviderError(`No primary model configured for role "${role}"`);
+  }
+  const model = OTARI_MODEL_IDS[configuredModel];
+  if (!model) {
+    throw new OtariProviderError(`Model "${configuredModel}" is not supported by the Otari provider`);
+  }
+  return model;
+}
+function isRetryableStatus(status) {
+  return status === 408 || status === 425 || status === 429 || status >= 500;
+}
+function retryDelayMs(response, retryNumber) {
+  const retryAfter = response?.headers.get("retry-after");
+  if (retryAfter) {
+    const seconds = Number(retryAfter);
+    if (Number.isFinite(seconds) && seconds >= 0) return seconds * 1e3;
+    const date = Date.parse(retryAfter);
+    if (!Number.isNaN(date)) return Math.max(0, date - Date.now());
+  }
+  return RETRY_BASE_DELAY_MS * 2 ** retryNumber;
+}
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+function parseUsage(usage) {
+  if (!usage) return void 0;
+  const { prompt_tokens: promptTokens, completion_tokens: completionTokens, total_tokens: totalTokens } = usage;
+  if (typeof promptTokens !== "number" || typeof completionTokens !== "number" || typeof totalTokens !== "number") {
+    return void 0;
+  }
+  return { promptTokens, completionTokens, totalTokens };
+}
+function parseResponse(data, requestedModel) {
+  const choice = data.choices?.[0];
+  if (typeof choice?.message?.content !== "string") {
+    throw new OtariProviderError("Otari returned a response without assistant message content");
+  }
+  const usage = parseUsage(data.usage);
+  return {
+    ...typeof data.id === "string" ? { id: data.id } : {},
+    model: typeof data.model === "string" ? data.model : requestedModel,
+    content: choice.message.content,
+    ...typeof choice.finish_reason === "string" ? { finishReason: choice.finish_reason } : {},
+    ...usage ? { usage } : {}
+  };
+}
+async function chat({ role, messages }, options = {}) {
+  if (messages.length === 0) {
+    throw new OtariProviderError("At least one chat message is required");
+  }
+  const apiKey = process.env.OTARI_API_KEY;
+  if (!apiKey) {
+    throw new OtariProviderError("OTARI_API_KEY environment variable is required");
+  }
+  const model = resolveModel(role);
+  const fetchImpl = options.fetch ?? globalThis.fetch;
+  const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+  const maxRetries = options.maxRetries ?? DEFAULT_MAX_RETRIES;
+  const logger = options.logger ?? new Logger(void 0, "Otari");
+  if (!Number.isFinite(timeoutMs) || timeoutMs <= 0 || !Number.isInteger(maxRetries) || maxRetries < 0) {
+    throw new OtariProviderError("Timeout must be positive and maxRetries must be a non-negative integer");
+  }
+  let lastError;
+  for (let attempt = 0; attempt <= maxRetries; attempt += 1) {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), timeoutMs);
+    let retryResponse;
+    try {
+      const response = await fetchImpl(OTARI_CHAT_URL, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Otari-Key": apiKey
+        },
+        body: JSON.stringify({ model, messages }),
+        signal: controller.signal
+      });
+      if (!response.ok) {
+        const retryable = isRetryableStatus(response.status);
+        lastError = new OtariProviderError(
+          `Otari request failed with HTTP ${response.status}${response.statusText ? ` ${response.statusText}` : ""}`,
+          response.status,
+          retryable
+        );
+        if (retryable) retryResponse = response;
+        else throw lastError;
+      } else {
+        let data;
+        try {
+          data = await response.json();
+        } catch {
+          throw new OtariProviderError("Otari returned invalid JSON");
+        }
+        const result = parseResponse(data, model);
+        if (result.usage) {
+          logger.info("Otari token usage", {
+            role,
+            model: result.model,
+            promptTokens: result.usage.promptTokens,
+            completionTokens: result.usage.completionTokens,
+            totalTokens: result.usage.totalTokens
+          });
+        }
+        return result;
+      }
+    } catch (error) {
+      if (error instanceof OtariProviderError && !error.retryable) throw error;
+      if (error instanceof OtariProviderError) {
+        lastError = error;
+      } else {
+        const timedOut = controller.signal.aborted;
+        lastError = new OtariProviderError(
+          timedOut ? `Otari request timed out after ${timeoutMs}ms` : "Otari request failed due to a network error",
+          void 0,
+          true
+        );
+      }
+    } finally {
+      clearTimeout(timeout);
+    }
+    if (attempt < maxRetries && lastError?.retryable) {
+      await sleep(retryDelayMs(retryResponse, attempt));
+    }
+  }
+  throw lastError ?? new OtariProviderError("Otari request failed");
+}
+
 // src/utils/worktree.ts
 import { spawn as spawn11 } from "child_process";
 import fs10 from "fs";
@@ -2114,7 +2271,9 @@ export {
   OpenCodeAdapter,
   OpenHandsAdapter,
   OtariGateway,
+  OtariProviderError,
   StuckDetector,
+  chat,
   closeDb,
   commandExists,
   commitWorkingTree,

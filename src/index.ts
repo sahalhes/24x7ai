@@ -18,6 +18,7 @@ export * from './core/daemon-manager.js';
 export * from './core/stuck-detector.js';
 export * from './core/scheduler.js';
 export * from './gateway/otari.js';
+export * from './providers/otari.js';
 export * from './github/repo.js';
 export * from './github/issues.js';
 export * from './github/pr.js';
