@@ -14,6 +14,7 @@ import { runConfigCommand } from './commands/config.js';
 import { runClean } from './commands/clean.js';
 import { runBackup, runRestore } from './commands/backup.js';
 import { runExport } from './commands/export.js';
+import { registerAgentCommands } from './commands/agents.js';
 import { setLogVerbosity } from '../utils/logger.js';
 
 const program = new Command();
@@ -151,6 +152,8 @@ program
   .action((dest, opts) => {
     runExport(dest, { projectsDir: opts.dir });
   });
+
+registerAgentCommands(program);
 
 program.parseAsync(process.argv).catch((err) => {
   console.error(`Error: ${err.message}`);

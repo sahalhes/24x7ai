@@ -1001,9 +1001,43 @@ function initDb(dbPath) {
       updated_at TEXT DEFAULT (datetime('now'))
     );
 
+    CREATE TABLE IF NOT EXISTS agent_definitions (
+      id TEXT PRIMARY KEY,
+      role TEXT NOT NULL CHECK(role IN ('architect', 'builder', 'tester')),
+      model TEXT NOT NULL,
+      provider_model TEXT NOT NULL,
+      system_instructions TEXT NOT NULL,
+      timeout_ms INTEGER NOT NULL CHECK(timeout_ms > 0),
+      created_at TEXT DEFAULT (datetime('now')),
+      updated_at TEXT DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS agent_task_runs (
+      id TEXT PRIMARY KEY,
+      agent_id TEXT NOT NULL REFERENCES agent_definitions(id) ON DELETE CASCADE,
+      role TEXT NOT NULL CHECK(role IN ('architect', 'builder', 'tester')),
+      model TEXT NOT NULL,
+      correlation_id TEXT NOT NULL,
+      status TEXT NOT NULL CHECK(status IN ('idle','queued','running','completed','failed','cancelled','timed_out')),
+      task_json TEXT NOT NULL,
+      attempt INTEGER NOT NULL DEFAULT 0,
+      max_retries INTEGER NOT NULL DEFAULT 0 CHECK(max_retries >= 0),
+      timeout_ms INTEGER NOT NULL CHECK(timeout_ms > 0),
+      error_json TEXT,
+      result_json TEXT,
+      metadata_json TEXT NOT NULL DEFAULT '{}',
+      created_at TEXT NOT NULL,
+      queued_at TEXT,
+      started_at TEXT,
+      finished_at TEXT,
+      updated_at TEXT NOT NULL
+    );
+
     CREATE INDEX IF NOT EXISTS idx_projects_sl_no ON projects(sl_no);
     CREATE INDEX IF NOT EXISTS idx_agent_runs_project_id ON agent_runs(project_id);
     CREATE INDEX IF NOT EXISTS idx_daemon_state_status ON daemon_state(status);
+    CREATE INDEX IF NOT EXISTS idx_agent_task_runs_status ON agent_task_runs(status);
+    CREATE INDEX IF NOT EXISTS idx_agent_task_runs_correlation ON agent_task_runs(correlation_id);
   `);
   return db;
 }
@@ -2876,6 +2910,565 @@ function runExport(dest, options) {
   }
 }
 
+// src/cli/commands/agents.ts
+import pc15 from "picocolors";
+
+// src/agents/agent.ts
+import { randomUUID } from "crypto";
+
+// src/providers/otari.ts
+import { existsSync, readFileSync } from "fs";
+import path18 from "path";
+import { fileURLToPath } from "url";
+var OTARI_CHAT_URL = "https://otari.ai/api/v1/chat/completions";
+var DEFAULT_TIMEOUT_MS = 3e4;
+var DEFAULT_MAX_RETRIES = 2;
+var RETRY_BASE_DELAY_MS = 250;
+var OTARI_MODEL_IDS = {
+  "kimi-k3.1-pro": "together:moonshotai/kimi-k3.1-pro"
+};
+var OtariProviderError = class extends Error {
+  constructor(message, status, retryable = false) {
+    super(message);
+    this.status = status;
+    this.retryable = retryable;
+    this.name = "OtariProviderError";
+  }
+  status;
+  retryable;
+};
+function defaultModelsConfigPath() {
+  const cwdConfig = path18.resolve(process.cwd(), "config", "models.json");
+  if (existsSync(cwdConfig)) return cwdConfig;
+  const moduleDir = path18.dirname(fileURLToPath(import.meta.url));
+  const packagedCandidates = [
+    path18.resolve(moduleDir, "../config/models.json"),
+    path18.resolve(moduleDir, "../../config/models.json")
+  ];
+  return packagedCandidates.find((candidate) => existsSync(candidate)) ?? cwdConfig;
+}
+function resolveModelSelection(role, configPath = defaultModelsConfigPath()) {
+  let config;
+  try {
+    config = JSON.parse(readFileSync(configPath, "utf8"));
+  } catch {
+    throw new OtariProviderError(`Unable to read model configuration at ${configPath}`);
+  }
+  const configuredModel = config.roles?.[role]?.primary;
+  if (typeof configuredModel !== "string" || !configuredModel) {
+    throw new OtariProviderError(`No primary model configured for role "${role}"`);
+  }
+  const model = OTARI_MODEL_IDS[configuredModel];
+  if (!model) {
+    throw new OtariProviderError(`Model "${configuredModel}" is not supported by the Otari provider`);
+  }
+  return { model: configuredModel, providerModel: model };
+}
+function resolveModel(role, configPath) {
+  return resolveModelSelection(role, configPath).providerModel;
+}
+function isRetryableStatus(status) {
+  return status === 408 || status === 425 || status === 429 || status >= 500;
+}
+function retryDelayMs(response, retryNumber) {
+  const retryAfter = response?.headers.get("retry-after");
+  if (retryAfter) {
+    const seconds = Number(retryAfter);
+    if (Number.isFinite(seconds) && seconds >= 0) return seconds * 1e3;
+    const date = Date.parse(retryAfter);
+    if (!Number.isNaN(date)) return Math.max(0, date - Date.now());
+  }
+  return RETRY_BASE_DELAY_MS * 2 ** retryNumber;
+}
+function sleep(ms, signal) {
+  return new Promise((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(new OtariProviderError("Otari request was cancelled"));
+      return;
+    }
+    const timeout = setTimeout(() => {
+      signal?.removeEventListener("abort", onAbort);
+      resolve();
+    }, ms);
+    const onAbort = () => {
+      clearTimeout(timeout);
+      reject(new OtariProviderError("Otari request was cancelled"));
+    };
+    signal?.addEventListener("abort", onAbort, { once: true });
+  });
+}
+function parseUsage(usage) {
+  if (!usage) return void 0;
+  const { prompt_tokens: promptTokens, completion_tokens: completionTokens, total_tokens: totalTokens } = usage;
+  if (typeof promptTokens !== "number" || typeof completionTokens !== "number" || typeof totalTokens !== "number") {
+    return void 0;
+  }
+  return { promptTokens, completionTokens, totalTokens };
+}
+function parseResponse(data, requestedModel) {
+  const choice = data.choices?.[0];
+  if (typeof choice?.message?.content !== "string") {
+    throw new OtariProviderError("Otari returned a response without assistant message content");
+  }
+  const usage = parseUsage(data.usage);
+  return {
+    ...typeof data.id === "string" ? { id: data.id } : {},
+    model: typeof data.model === "string" ? data.model : requestedModel,
+    content: choice.message.content,
+    ...typeof choice.finish_reason === "string" ? { finishReason: choice.finish_reason } : {},
+    ...usage ? { usage } : {}
+  };
+}
+async function chat({ role, messages, model: requestedModel }, options = {}) {
+  if (messages.length === 0) {
+    throw new OtariProviderError("At least one chat message is required");
+  }
+  const apiKey = process.env.OTARI_API_KEY;
+  if (!apiKey) {
+    throw new OtariProviderError("OTARI_API_KEY environment variable is required");
+  }
+  const model = requestedModel ?? resolveModel(role);
+  const fetchImpl = options.fetch ?? globalThis.fetch;
+  const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+  const maxRetries = options.maxRetries ?? DEFAULT_MAX_RETRIES;
+  const logger = options.logger ?? new Logger(void 0, "Otari");
+  const externalSignal = options.signal;
+  if (externalSignal?.aborted) {
+    throw new OtariProviderError("Otari request was cancelled");
+  }
+  if (!Number.isFinite(timeoutMs) || timeoutMs <= 0 || !Number.isInteger(maxRetries) || maxRetries < 0) {
+    throw new OtariProviderError("Timeout must be positive and maxRetries must be a non-negative integer");
+  }
+  let lastError;
+  for (let attempt = 0; attempt <= maxRetries; attempt += 1) {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), timeoutMs);
+    const onExternalAbort = () => controller.abort();
+    externalSignal?.addEventListener("abort", onExternalAbort, { once: true });
+    let retryResponse;
+    try {
+      const response = await fetchImpl(OTARI_CHAT_URL, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Otari-Key": apiKey
+        },
+        body: JSON.stringify({ model, messages }),
+        signal: controller.signal
+      });
+      if (!response.ok) {
+        const retryable = isRetryableStatus(response.status);
+        lastError = new OtariProviderError(
+          `Otari request failed with HTTP ${response.status}${response.statusText ? ` ${response.statusText}` : ""}`,
+          response.status,
+          retryable
+        );
+        if (retryable) retryResponse = response;
+        else throw lastError;
+      } else {
+        let data;
+        try {
+          data = await response.json();
+        } catch {
+          throw new OtariProviderError("Otari returned invalid JSON");
+        }
+        const result = parseResponse(data, model);
+        if (result.usage) {
+          logger.info("Otari token usage", {
+            role,
+            model: result.model,
+            promptTokens: result.usage.promptTokens,
+            completionTokens: result.usage.completionTokens,
+            totalTokens: result.usage.totalTokens
+          });
+        }
+        return result;
+      }
+    } catch (error) {
+      if (externalSignal?.aborted) {
+        throw new OtariProviderError("Otari request was cancelled");
+      }
+      if (error instanceof OtariProviderError && !error.retryable) throw error;
+      if (error instanceof OtariProviderError) {
+        lastError = error;
+      } else {
+        const timedOut = controller.signal.aborted;
+        lastError = new OtariProviderError(
+          timedOut ? `Otari request timed out after ${timeoutMs}ms` : "Otari request failed due to a network error",
+          void 0,
+          true
+        );
+      }
+    } finally {
+      clearTimeout(timeout);
+      externalSignal?.removeEventListener("abort", onExternalAbort);
+    }
+    if (attempt < maxRetries && lastError?.retryable) {
+      await sleep(retryDelayMs(retryResponse, attempt), externalSignal);
+    }
+  }
+  throw lastError ?? new OtariProviderError("Otari request failed");
+}
+
+// src/agents/agent.ts
+var DEFAULT_AGENT_TIMEOUT_MS = 3e4;
+var SYSTEM_INSTRUCTIONS = {
+  architect: "You are the architect agent. Analyze the task and produce a clear, structured implementation plan. Do not make changes or execute commands.",
+  builder: "You are the builder agent. Produce a structured implementation result for the assigned task. Describe concrete code changes and verification without claiming unperformed work.",
+  tester: "You are the tester agent. Produce a structured test report with coverage, observed results, failures, and remaining risks. Do not claim tests ran unless their output is provided."
+};
+var OUTPUT_KINDS = {
+  architect: "plan",
+  builder: "implementation",
+  tester: "test_report"
+};
+var RoleAgent = class {
+  id;
+  role;
+  model;
+  providerModel;
+  systemInstructions;
+  timeoutMs;
+  provider;
+  constructor(options) {
+    if (!Number.isFinite(options.timeoutMs ?? DEFAULT_AGENT_TIMEOUT_MS) || (options.timeoutMs ?? DEFAULT_AGENT_TIMEOUT_MS) <= 0) {
+      throw new Error("Agent timeout must be positive");
+    }
+    this.id = options.id;
+    this.role = options.role;
+    this.model = options.model;
+    this.providerModel = options.providerModel;
+    this.systemInstructions = options.systemInstructions ?? SYSTEM_INSTRUCTIONS[options.role];
+    this.timeoutMs = options.timeoutMs ?? DEFAULT_AGENT_TIMEOUT_MS;
+    this.provider = options.provider ?? { chat };
+  }
+  async run(task, context) {
+    if (!task.prompt.trim()) throw new Error("Agent task prompt must not be empty");
+    const startedAt = (/* @__PURE__ */ new Date()).toISOString();
+    const runId = context?.runId ?? randomUUID();
+    const correlationId = context?.correlationId ?? task.correlationId ?? randomUUID();
+    const contextText = task.context === void 0 ? "" : `
+
+Task context:
+${JSON.stringify(task.context, null, 2)}`;
+    const response = await this.provider.chat({
+      role: this.role,
+      model: this.providerModel,
+      messages: [
+        { role: "system", content: this.systemInstructions },
+        { role: "user", content: `${task.prompt}${contextText}` }
+      ]
+    }, {
+      signal: context?.signal,
+      timeoutMs: context?.timeoutMs ?? task.timeoutMs ?? this.timeoutMs,
+      // Run-level retries are owned by ExecutionManager.
+      maxRetries: 0
+    });
+    return {
+      runId,
+      correlationId,
+      agentId: this.id,
+      role: this.role,
+      model: this.model,
+      output: { kind: OUTPUT_KINDS[this.role], content: response.content },
+      startedAt,
+      finishedAt: (/* @__PURE__ */ new Date()).toISOString(),
+      ...response.id ? { providerResponseId: response.id } : {},
+      ...response.usage ? { usage: response.usage } : {}
+    };
+  }
+};
+
+// src/agents/model-resolver.ts
+var ModelResolver = class {
+  constructor(configPath) {
+    this.configPath = configPath;
+  }
+  configPath;
+  resolve(role) {
+    return resolveModelSelection(role, this.configPath);
+  }
+};
+
+// src/agents/factory.ts
+var INITIAL_AGENT_ROLES = ["architect", "builder", "tester"];
+var AgentFactory = class {
+  constructor(options = {}) {
+    this.options = options;
+  }
+  options;
+  create(role, id = role) {
+    const { model, providerModel } = (this.options.modelResolver ?? new ModelResolver()).resolve(role);
+    return new RoleAgent({
+      id,
+      role,
+      model,
+      providerModel,
+      provider: this.options.provider,
+      timeoutMs: this.options.timeoutMs,
+      systemInstructions: this.options.systemInstructions?.[role]
+    });
+  }
+  createInitialAgents() {
+    return INITIAL_AGENT_ROLES.map((role) => this.create(role));
+  }
+};
+
+// src/agents/registry.ts
+var AgentRegistry = class {
+  agents = /* @__PURE__ */ new Map();
+  register(agent) {
+    if (this.agents.has(agent.id)) {
+      throw new Error(`Agent "${agent.id}" is already registered`);
+    }
+    this.agents.set(agent.id, agent);
+  }
+  get(id) {
+    const agent = this.agents.get(id);
+    if (!agent) throw new Error(`Agent "${id}" is not registered`);
+    return agent;
+  }
+  find(id) {
+    return this.agents.get(id);
+  }
+  list(role) {
+    const agents = [...this.agents.values()];
+    return role ? agents.filter((agent) => agent.role === role) : agents;
+  }
+  clear() {
+    this.agents.clear();
+  }
+};
+
+// src/agents/store.ts
+function parseJson(value, fallback) {
+  if (!value) return fallback;
+  try {
+    return JSON.parse(value);
+  } catch {
+    return fallback;
+  }
+}
+var AgentRuntimeStore = class {
+  constructor(db) {
+    this.db = db;
+  }
+  db;
+  upsertAgent(agent) {
+    this.db.prepare(`
+      INSERT INTO agent_definitions (
+        id, role, model, provider_model, system_instructions, timeout_ms, updated_at
+      ) VALUES (
+        @id, @role, @model, @providerModel, @systemInstructions, @timeoutMs, datetime('now')
+      )
+      ON CONFLICT(id) DO UPDATE SET
+        role = excluded.role,
+        model = excluded.model,
+        provider_model = excluded.provider_model,
+        system_instructions = excluded.system_instructions,
+        timeout_ms = excluded.timeout_ms,
+        updated_at = datetime('now')
+    `).run({ ...agent });
+  }
+  getAgent(id) {
+    const row = this.db.prepare("SELECT * FROM agent_definitions WHERE id = ?").get(id);
+    return row ? this.mapAgent(row) : null;
+  }
+  listAgents() {
+    const rows = this.db.prepare("SELECT * FROM agent_definitions ORDER BY role, id").all();
+    return rows.map((row) => this.mapAgent(row));
+  }
+  createRun(run) {
+    this.db.prepare(`
+      INSERT INTO agent_task_runs (
+        id, agent_id, role, model, correlation_id, status, task_json, attempt,
+        max_retries, timeout_ms, error_json, result_json, metadata_json,
+        created_at, queued_at, started_at, finished_at, updated_at
+      ) VALUES (
+        @id, @agentId, @role, @model, @correlationId, @status, @taskJson, @attempt,
+        @maxRetries, @timeoutMs, @errorJson, @resultJson, @metadataJson,
+        @createdAt, @queuedAt, @startedAt, @finishedAt, @updatedAt
+      )
+    `).run(this.serializeRun(run));
+  }
+  updateRun(run) {
+    const result = this.db.prepare(`
+      UPDATE agent_task_runs SET
+        status = @status,
+        attempt = @attempt,
+        error_json = @errorJson,
+        result_json = @resultJson,
+        metadata_json = @metadataJson,
+        queued_at = @queuedAt,
+        started_at = @startedAt,
+        finished_at = @finishedAt,
+        updated_at = @updatedAt
+      WHERE id = @id
+    `).run(this.serializeRun(run));
+    if (result.changes === 0) throw new Error(`Agent task run "${run.id}" not found`);
+  }
+  getRun(id) {
+    const row = this.db.prepare("SELECT * FROM agent_task_runs WHERE id = ?").get(id);
+    return row ? this.mapRun(row) : null;
+  }
+  listRuns(options = {}) {
+    const limit = options.limit ?? 100;
+    const rows = options.status ? this.db.prepare("SELECT * FROM agent_task_runs WHERE status = ? ORDER BY created_at DESC, id DESC LIMIT ?").all(options.status, limit) : this.db.prepare("SELECT * FROM agent_task_runs ORDER BY created_at DESC, id DESC LIMIT ?").all(limit);
+    return rows.map((row) => this.mapRun(row));
+  }
+  serializeRun(run) {
+    return {
+      ...run,
+      taskJson: JSON.stringify(run.task),
+      errorJson: run.error ? JSON.stringify(run.error) : null,
+      resultJson: run.result ? JSON.stringify(run.result) : null,
+      metadataJson: JSON.stringify(run.metadata),
+      queuedAt: run.queuedAt ?? null,
+      startedAt: run.startedAt ?? null,
+      finishedAt: run.finishedAt ?? null
+    };
+  }
+  mapAgent(row) {
+    return {
+      id: row.id,
+      role: row.role,
+      model: row.model,
+      providerModel: row.provider_model,
+      systemInstructions: row.system_instructions,
+      timeoutMs: row.timeout_ms,
+      createdAt: row.created_at,
+      updatedAt: row.updated_at
+    };
+  }
+  mapRun(row) {
+    return {
+      id: row.id,
+      agentId: row.agent_id,
+      role: row.role,
+      model: row.model,
+      correlationId: row.correlation_id,
+      status: row.status,
+      task: parseJson(row.task_json, { prompt: "" }),
+      attempt: row.attempt,
+      maxRetries: row.max_retries,
+      timeoutMs: row.timeout_ms,
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+      ...row.queued_at ? { queuedAt: row.queued_at } : {},
+      ...row.started_at ? { startedAt: row.started_at } : {},
+      ...row.finished_at ? { finishedAt: row.finished_at } : {},
+      ...row.error_json ? { error: parseJson(row.error_json, void 0) } : {},
+      ...row.result_json ? { result: parseJson(row.result_json, void 0) } : {},
+      metadata: parseJson(row.metadata_json, {})
+    };
+  }
+};
+
+// src/cli/commands/agents.ts
+function runtimeStore(projectsDir) {
+  return new AgentRuntimeStore(getDb(resolveProjectsRoot(projectsDir)));
+}
+function registerInitialAgents(store) {
+  const registry = new AgentRegistry();
+  for (const agent of new AgentFactory().createInitialAgents()) {
+    registry.register(agent);
+    store.upsertAgent(agent);
+  }
+  return registry;
+}
+function listAgents(options) {
+  const store = runtimeStore(options.dir);
+  registerInitialAgents(store);
+  const agents = store.listAgents();
+  if (options.json) {
+    console.log(JSON.stringify(agents, null, 2));
+    return;
+  }
+  console.log(pc15.cyan("\n24x7ai Agents:"));
+  for (const agent of agents) {
+    console.log(`  ${pc15.bold(agent.id.padEnd(14))} ${agent.role.padEnd(12)} ${agent.model}  timeout=${agent.timeoutMs}ms`);
+  }
+  console.log("");
+}
+function showAgent(id, options) {
+  const store = runtimeStore(options.dir);
+  registerInitialAgents(store);
+  const agent = store.getAgent(id);
+  if (!agent) {
+    console.error(pc15.red(`Agent "${id}" not found`));
+    process.exitCode = 1;
+    return;
+  }
+  if (options.json) {
+    console.log(JSON.stringify(agent, null, 2));
+    return;
+  }
+  console.log(pc15.cyan(`
+Agent: ${agent.id}`));
+  console.log(`  Role:           ${agent.role}`);
+  console.log(`  Model:          ${agent.model}`);
+  console.log(`  Provider model: ${agent.providerModel}`);
+  console.log(`  Timeout:        ${agent.timeoutMs}ms`);
+  console.log(`  Instructions:   ${agent.systemInstructions}
+`);
+}
+function listRuns(options) {
+  const runs = runtimeStore(options.dir).listRuns({ limit: options.limit ?? 20 });
+  if (options.json) {
+    console.log(JSON.stringify(runs, null, 2));
+    return;
+  }
+  if (runs.length === 0) {
+    console.log("No agent task runs found.");
+    return;
+  }
+  console.log(pc15.cyan("\n24x7ai Agent Runs:"));
+  for (const run of runs) {
+    console.log(`  ${run.id}  ${run.status.padEnd(10)} ${run.agentId.padEnd(12)} attempt=${run.attempt} correlation=${run.correlationId}`);
+  }
+  console.log("");
+}
+function showRun(id, options) {
+  const run = runtimeStore(options.dir).getRun(id);
+  if (!run) {
+    console.error(pc15.red(`Run "${id}" not found`));
+    process.exitCode = 1;
+    return;
+  }
+  if (options.json) {
+    console.log(JSON.stringify(run, null, 2));
+    return;
+  }
+  console.log(pc15.cyan(`
+Run: ${run.id}`));
+  console.log(`  Agent:       ${run.agentId}`);
+  console.log(`  Role:        ${run.role}`);
+  console.log(`  Model:       ${run.model}`);
+  console.log(`  Status:      ${run.status}`);
+  console.log(`  Attempt:     ${run.attempt}/${run.maxRetries + 1}`);
+  console.log(`  Correlation: ${run.correlationId}`);
+  console.log(`  Created:     ${run.createdAt}`);
+  console.log(`  Started:     ${run.startedAt ?? "\u2014"}`);
+  console.log(`  Finished:    ${run.finishedAt ?? "\u2014"}`);
+  if (run.error) console.log(`  Error:       ${run.error.name}: ${run.error.message}`);
+  if (run.result) console.log(`  Output:
+${run.result.output.content}`);
+  console.log("");
+}
+function inspectOptions(command) {
+  return command.opts();
+}
+function registerAgentCommands(program2) {
+  const agents = program2.command("agents").description("Inspect reusable AI agents");
+  agents.command("list").description("List configured agents").option("-d, --dir <dir>", "Projects directory").option("--json", "Output JSON").action((_options, command) => listAgents(inspectOptions(command)));
+  agents.command("show <id>").description("Show an agent definition").option("-d, --dir <dir>", "Projects directory").option("--json", "Output JSON").action((id, _options, command) => showAgent(id, inspectOptions(command)));
+  const runs = program2.command("runs").description("Inspect agent task runs");
+  runs.command("list").description("List agent task runs").option("-d, --dir <dir>", "Projects directory").option("-l, --limit <n>", "Maximum runs to show", parseInt).option("--json", "Output JSON").action((_options, command) => listRuns(inspectOptions(command)));
+  const run = program2.commands.find((command) => command.name() === "run");
+  if (!run) throw new Error("The run command must be registered before agent run commands");
+  run.command("status <run-id>").description("Show agent task run status").option("-d, --dir <dir>", "Projects directory").option("--json", "Output JSON").action((id, _options, command) => showRun(id, inspectOptions(command)));
+}
+
 // src/cli/index.ts
 var program = new Command();
 program.name("24x7ai").description("Universal Agent Fleet Controller \u2014 1 package, 1 vps, 1 command").version("2.0.0").option("--silent", "Suppress all non-error output").option("--verbose", "Enable verbose debugging logs").hook("preAction", (thisCommand) => {
@@ -2930,6 +3523,7 @@ program.command("restore <file> [dir]").description("Restore fleet database from
 program.command("export [dest]").description("Export fleet projects and metadata to JSON file or stdout").option("-d, --dir <dir>", "Projects directory").action((dest, opts) => {
   runExport(dest, { projectsDir: opts.dir });
 });
+registerAgentCommands(program);
 program.parseAsync(process.argv).catch((err) => {
   console.error(`Error: ${err.message}`);
   process.exit(1);

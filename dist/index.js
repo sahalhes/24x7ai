@@ -191,9 +191,43 @@ function initDb(dbPath) {
       updated_at TEXT DEFAULT (datetime('now'))
     );
 
+    CREATE TABLE IF NOT EXISTS agent_definitions (
+      id TEXT PRIMARY KEY,
+      role TEXT NOT NULL CHECK(role IN ('architect', 'builder', 'tester')),
+      model TEXT NOT NULL,
+      provider_model TEXT NOT NULL,
+      system_instructions TEXT NOT NULL,
+      timeout_ms INTEGER NOT NULL CHECK(timeout_ms > 0),
+      created_at TEXT DEFAULT (datetime('now')),
+      updated_at TEXT DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS agent_task_runs (
+      id TEXT PRIMARY KEY,
+      agent_id TEXT NOT NULL REFERENCES agent_definitions(id) ON DELETE CASCADE,
+      role TEXT NOT NULL CHECK(role IN ('architect', 'builder', 'tester')),
+      model TEXT NOT NULL,
+      correlation_id TEXT NOT NULL,
+      status TEXT NOT NULL CHECK(status IN ('idle','queued','running','completed','failed','cancelled','timed_out')),
+      task_json TEXT NOT NULL,
+      attempt INTEGER NOT NULL DEFAULT 0,
+      max_retries INTEGER NOT NULL DEFAULT 0 CHECK(max_retries >= 0),
+      timeout_ms INTEGER NOT NULL CHECK(timeout_ms > 0),
+      error_json TEXT,
+      result_json TEXT,
+      metadata_json TEXT NOT NULL DEFAULT '{}',
+      created_at TEXT NOT NULL,
+      queued_at TEXT,
+      started_at TEXT,
+      finished_at TEXT,
+      updated_at TEXT NOT NULL
+    );
+
     CREATE INDEX IF NOT EXISTS idx_projects_sl_no ON projects(sl_no);
     CREATE INDEX IF NOT EXISTS idx_agent_runs_project_id ON agent_runs(project_id);
     CREATE INDEX IF NOT EXISTS idx_daemon_state_status ON daemon_state(status);
+    CREATE INDEX IF NOT EXISTS idx_agent_task_runs_status ON agent_task_runs(status);
+    CREATE INDEX IF NOT EXISTS idx_agent_task_runs_correlation ON agent_task_runs(correlation_id);
   `);
   return db;
 }
@@ -2059,8 +2093,9 @@ ${issuePrompt || "General ongoing enhancement and test coverage."}`
 };
 
 // src/providers/otari.ts
-import { readFileSync } from "fs";
+import { existsSync, readFileSync } from "fs";
 import path10 from "path";
+import { fileURLToPath } from "url";
 var OTARI_CHAT_URL = "https://otari.ai/api/v1/chat/completions";
 var DEFAULT_TIMEOUT_MS = 3e4;
 var DEFAULT_MAX_RETRIES = 2;
@@ -2078,8 +2113,17 @@ var OtariProviderError = class extends Error {
   status;
   retryable;
 };
-function resolveModel(role) {
-  const configPath = path10.resolve(process.cwd(), "config", "models.json");
+function defaultModelsConfigPath() {
+  const cwdConfig = path10.resolve(process.cwd(), "config", "models.json");
+  if (existsSync(cwdConfig)) return cwdConfig;
+  const moduleDir = path10.dirname(fileURLToPath(import.meta.url));
+  const packagedCandidates = [
+    path10.resolve(moduleDir, "../config/models.json"),
+    path10.resolve(moduleDir, "../../config/models.json")
+  ];
+  return packagedCandidates.find((candidate) => existsSync(candidate)) ?? cwdConfig;
+}
+function resolveModelSelection(role, configPath = defaultModelsConfigPath()) {
   let config;
   try {
     config = JSON.parse(readFileSync(configPath, "utf8"));
@@ -2094,7 +2138,10 @@ function resolveModel(role) {
   if (!model) {
     throw new OtariProviderError(`Model "${configuredModel}" is not supported by the Otari provider`);
   }
-  return model;
+  return { model: configuredModel, providerModel: model };
+}
+function resolveModel(role, configPath) {
+  return resolveModelSelection(role, configPath).providerModel;
 }
 function isRetryableStatus(status) {
   return status === 408 || status === 425 || status === 429 || status >= 500;
@@ -2109,8 +2156,22 @@ function retryDelayMs(response, retryNumber) {
   }
   return RETRY_BASE_DELAY_MS * 2 ** retryNumber;
 }
-function sleep(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+function sleep(ms, signal) {
+  return new Promise((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(new OtariProviderError("Otari request was cancelled"));
+      return;
+    }
+    const timeout = setTimeout(() => {
+      signal?.removeEventListener("abort", onAbort);
+      resolve();
+    }, ms);
+    const onAbort = () => {
+      clearTimeout(timeout);
+      reject(new OtariProviderError("Otari request was cancelled"));
+    };
+    signal?.addEventListener("abort", onAbort, { once: true });
+  });
 }
 function parseUsage(usage) {
   if (!usage) return void 0;
@@ -2134,7 +2195,7 @@ function parseResponse(data, requestedModel) {
     ...usage ? { usage } : {}
   };
 }
-async function chat({ role, messages }, options = {}) {
+async function chat({ role, messages, model: requestedModel }, options = {}) {
   if (messages.length === 0) {
     throw new OtariProviderError("At least one chat message is required");
   }
@@ -2142,11 +2203,15 @@ async function chat({ role, messages }, options = {}) {
   if (!apiKey) {
     throw new OtariProviderError("OTARI_API_KEY environment variable is required");
   }
-  const model = resolveModel(role);
+  const model = requestedModel ?? resolveModel(role);
   const fetchImpl = options.fetch ?? globalThis.fetch;
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   const maxRetries = options.maxRetries ?? DEFAULT_MAX_RETRIES;
   const logger = options.logger ?? new Logger(void 0, "Otari");
+  const externalSignal = options.signal;
+  if (externalSignal?.aborted) {
+    throw new OtariProviderError("Otari request was cancelled");
+  }
   if (!Number.isFinite(timeoutMs) || timeoutMs <= 0 || !Number.isInteger(maxRetries) || maxRetries < 0) {
     throw new OtariProviderError("Timeout must be positive and maxRetries must be a non-negative integer");
   }
@@ -2154,6 +2219,8 @@ async function chat({ role, messages }, options = {}) {
   for (let attempt = 0; attempt <= maxRetries; attempt += 1) {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), timeoutMs);
+    const onExternalAbort = () => controller.abort();
+    externalSignal?.addEventListener("abort", onExternalAbort, { once: true });
     let retryResponse;
     try {
       const response = await fetchImpl(OTARI_CHAT_URL, {
@@ -2194,6 +2261,9 @@ async function chat({ role, messages }, options = {}) {
         return result;
       }
     } catch (error) {
+      if (externalSignal?.aborted) {
+        throw new OtariProviderError("Otari request was cancelled");
+      }
       if (error instanceof OtariProviderError && !error.retryable) throw error;
       if (error instanceof OtariProviderError) {
         lastError = error;
@@ -2207,13 +2277,693 @@ async function chat({ role, messages }, options = {}) {
       }
     } finally {
       clearTimeout(timeout);
+      externalSignal?.removeEventListener("abort", onExternalAbort);
     }
     if (attempt < maxRetries && lastError?.retryable) {
-      await sleep(retryDelayMs(retryResponse, attempt));
+      await sleep(retryDelayMs(retryResponse, attempt), externalSignal);
     }
   }
   throw lastError ?? new OtariProviderError("Otari request failed");
 }
+
+// src/agents/errors.ts
+var AgentRuntimeError = class extends Error {
+  constructor(message) {
+    super(message);
+    this.name = "AgentRuntimeError";
+  }
+};
+var InvalidStateTransitionError = class extends AgentRuntimeError {
+  constructor(from, to) {
+    super(`Invalid run state transition from "${from}" to "${to}"`);
+    this.name = "InvalidStateTransitionError";
+  }
+};
+var AgentTimeoutError = class extends AgentRuntimeError {
+  constructor(timeoutMs) {
+    super(`Agent execution timed out after ${timeoutMs}ms`);
+    this.name = "AgentTimeoutError";
+  }
+};
+var AgentCancelledError = class extends AgentRuntimeError {
+  constructor(message = "Agent execution was cancelled") {
+    super(message);
+    this.name = "AgentCancelledError";
+  }
+};
+
+// src/agents/model-resolver.ts
+var ModelResolver = class {
+  constructor(configPath) {
+    this.configPath = configPath;
+  }
+  configPath;
+  resolve(role) {
+    return resolveModelSelection(role, this.configPath);
+  }
+};
+
+// src/agents/agent.ts
+import { randomUUID } from "crypto";
+var DEFAULT_AGENT_TIMEOUT_MS = 3e4;
+var SYSTEM_INSTRUCTIONS = {
+  architect: "You are the architect agent. Analyze the task and produce a clear, structured implementation plan. Do not make changes or execute commands.",
+  builder: "You are the builder agent. Produce a structured implementation result for the assigned task. Describe concrete code changes and verification without claiming unperformed work.",
+  tester: "You are the tester agent. Produce a structured test report with coverage, observed results, failures, and remaining risks. Do not claim tests ran unless their output is provided."
+};
+var OUTPUT_KINDS = {
+  architect: "plan",
+  builder: "implementation",
+  tester: "test_report"
+};
+var RoleAgent = class {
+  id;
+  role;
+  model;
+  providerModel;
+  systemInstructions;
+  timeoutMs;
+  provider;
+  constructor(options) {
+    if (!Number.isFinite(options.timeoutMs ?? DEFAULT_AGENT_TIMEOUT_MS) || (options.timeoutMs ?? DEFAULT_AGENT_TIMEOUT_MS) <= 0) {
+      throw new Error("Agent timeout must be positive");
+    }
+    this.id = options.id;
+    this.role = options.role;
+    this.model = options.model;
+    this.providerModel = options.providerModel;
+    this.systemInstructions = options.systemInstructions ?? SYSTEM_INSTRUCTIONS[options.role];
+    this.timeoutMs = options.timeoutMs ?? DEFAULT_AGENT_TIMEOUT_MS;
+    this.provider = options.provider ?? { chat };
+  }
+  async run(task, context) {
+    if (!task.prompt.trim()) throw new Error("Agent task prompt must not be empty");
+    const startedAt = (/* @__PURE__ */ new Date()).toISOString();
+    const runId = context?.runId ?? randomUUID();
+    const correlationId = context?.correlationId ?? task.correlationId ?? randomUUID();
+    const contextText = task.context === void 0 ? "" : `
+
+Task context:
+${JSON.stringify(task.context, null, 2)}`;
+    const response = await this.provider.chat({
+      role: this.role,
+      model: this.providerModel,
+      messages: [
+        { role: "system", content: this.systemInstructions },
+        { role: "user", content: `${task.prompt}${contextText}` }
+      ]
+    }, {
+      signal: context?.signal,
+      timeoutMs: context?.timeoutMs ?? task.timeoutMs ?? this.timeoutMs,
+      // Run-level retries are owned by ExecutionManager.
+      maxRetries: 0
+    });
+    return {
+      runId,
+      correlationId,
+      agentId: this.id,
+      role: this.role,
+      model: this.model,
+      output: { kind: OUTPUT_KINDS[this.role], content: response.content },
+      startedAt,
+      finishedAt: (/* @__PURE__ */ new Date()).toISOString(),
+      ...response.id ? { providerResponseId: response.id } : {},
+      ...response.usage ? { usage: response.usage } : {}
+    };
+  }
+};
+
+// src/agents/factory.ts
+var INITIAL_AGENT_ROLES = ["architect", "builder", "tester"];
+var AgentFactory = class {
+  constructor(options = {}) {
+    this.options = options;
+  }
+  options;
+  create(role, id = role) {
+    const { model, providerModel } = (this.options.modelResolver ?? new ModelResolver()).resolve(role);
+    return new RoleAgent({
+      id,
+      role,
+      model,
+      providerModel,
+      provider: this.options.provider,
+      timeoutMs: this.options.timeoutMs,
+      systemInstructions: this.options.systemInstructions?.[role]
+    });
+  }
+  createInitialAgents() {
+    return INITIAL_AGENT_ROLES.map((role) => this.create(role));
+  }
+};
+
+// src/agents/registry.ts
+var AgentRegistry = class {
+  agents = /* @__PURE__ */ new Map();
+  register(agent) {
+    if (this.agents.has(agent.id)) {
+      throw new Error(`Agent "${agent.id}" is already registered`);
+    }
+    this.agents.set(agent.id, agent);
+  }
+  get(id) {
+    const agent = this.agents.get(id);
+    if (!agent) throw new Error(`Agent "${id}" is not registered`);
+    return agent;
+  }
+  find(id) {
+    return this.agents.get(id);
+  }
+  list(role) {
+    const agents = [...this.agents.values()];
+    return role ? agents.filter((agent) => agent.role === role) : agents;
+  }
+  clear() {
+    this.agents.clear();
+  }
+};
+
+// src/agents/lifecycle.ts
+var TRANSITIONS = {
+  idle: ["queued", "cancelled"],
+  queued: ["running", "cancelled"],
+  running: ["completed", "failed", "cancelled", "timed_out"],
+  completed: [],
+  failed: ["queued"],
+  cancelled: [],
+  timed_out: ["queued"]
+};
+var RunLifecycle = class {
+  constructor(status = "idle", createdAt = (/* @__PURE__ */ new Date()).toISOString(), updatedAt = createdAt, queuedAt, startedAt, finishedAt) {
+    this.status = status;
+    this.createdAt = createdAt;
+    this.updatedAt = updatedAt;
+    this.queuedAt = queuedAt;
+    this.startedAt = startedAt;
+    this.finishedAt = finishedAt;
+  }
+  status;
+  createdAt;
+  updatedAt;
+  queuedAt;
+  startedAt;
+  finishedAt;
+  transition(next) {
+    if (!TRANSITIONS[this.status].includes(next)) {
+      throw new InvalidStateTransitionError(this.status, next);
+    }
+    const now = (/* @__PURE__ */ new Date()).toISOString();
+    this.status = next;
+    this.updatedAt = now;
+    if (next === "queued") {
+      this.queuedAt = now;
+      this.finishedAt = void 0;
+    } else if (next === "running") {
+      this.startedAt ??= now;
+    } else {
+      this.finishedAt = now;
+    }
+  }
+  static isTerminal(status) {
+    return status === "completed" || status === "failed" || status === "cancelled" || status === "timed_out";
+  }
+};
+
+// src/agents/dispatcher.ts
+var TaskDispatcher = class {
+  constructor(maxConcurrent) {
+    this.maxConcurrent = maxConcurrent;
+    if (!Number.isInteger(maxConcurrent) || maxConcurrent < 1) {
+      throw new Error("maxConcurrent must be a positive integer");
+    }
+  }
+  maxConcurrent;
+  jobs = /* @__PURE__ */ new Map();
+  queue = [];
+  active = 0;
+  accepting = true;
+  get activeCount() {
+    return this.active;
+  }
+  get queuedCount() {
+    return this.queue.length;
+  }
+  dispatch(id, operation) {
+    if (!this.accepting) return Promise.reject(new Error("Task dispatcher is shutting down"));
+    if (this.jobs.has(id)) return Promise.reject(new Error(`Run "${id}" has already been dispatched`));
+    return new Promise((resolve, reject) => {
+      const job = {
+        id,
+        operation,
+        controller: new AbortController(),
+        state: "queued",
+        resolve,
+        reject
+      };
+      this.jobs.set(id, job);
+      this.queue.push(job);
+      this.pump();
+    });
+  }
+  cancel(id) {
+    const job = this.jobs.get(id);
+    if (!job) return false;
+    if (job.state === "queued") {
+      this.queue.splice(this.queue.indexOf(job), 1);
+      this.jobs.delete(id);
+      job.reject(new AgentCancelledError("Queued agent execution was cancelled"));
+    } else {
+      job.controller.abort(new AgentCancelledError());
+    }
+    return true;
+  }
+  isQueued(id) {
+    return this.jobs.get(id)?.state === "queued";
+  }
+  stopAccepting() {
+    this.accepting = false;
+  }
+  pump() {
+    while (this.active < this.maxConcurrent && this.queue.length > 0) {
+      const job = this.queue.shift();
+      job.state = "running";
+      this.active += 1;
+      void Promise.resolve().then(() => job.operation(job.controller.signal)).then(job.resolve, job.reject).finally(() => {
+        this.active -= 1;
+        this.jobs.delete(job.id);
+        this.pump();
+      });
+    }
+  }
+};
+
+// src/agents/store.ts
+function parseJson(value, fallback) {
+  if (!value) return fallback;
+  try {
+    return JSON.parse(value);
+  } catch {
+    return fallback;
+  }
+}
+var AgentRuntimeStore = class {
+  constructor(db) {
+    this.db = db;
+  }
+  db;
+  upsertAgent(agent) {
+    this.db.prepare(`
+      INSERT INTO agent_definitions (
+        id, role, model, provider_model, system_instructions, timeout_ms, updated_at
+      ) VALUES (
+        @id, @role, @model, @providerModel, @systemInstructions, @timeoutMs, datetime('now')
+      )
+      ON CONFLICT(id) DO UPDATE SET
+        role = excluded.role,
+        model = excluded.model,
+        provider_model = excluded.provider_model,
+        system_instructions = excluded.system_instructions,
+        timeout_ms = excluded.timeout_ms,
+        updated_at = datetime('now')
+    `).run({ ...agent });
+  }
+  getAgent(id) {
+    const row = this.db.prepare("SELECT * FROM agent_definitions WHERE id = ?").get(id);
+    return row ? this.mapAgent(row) : null;
+  }
+  listAgents() {
+    const rows = this.db.prepare("SELECT * FROM agent_definitions ORDER BY role, id").all();
+    return rows.map((row) => this.mapAgent(row));
+  }
+  createRun(run) {
+    this.db.prepare(`
+      INSERT INTO agent_task_runs (
+        id, agent_id, role, model, correlation_id, status, task_json, attempt,
+        max_retries, timeout_ms, error_json, result_json, metadata_json,
+        created_at, queued_at, started_at, finished_at, updated_at
+      ) VALUES (
+        @id, @agentId, @role, @model, @correlationId, @status, @taskJson, @attempt,
+        @maxRetries, @timeoutMs, @errorJson, @resultJson, @metadataJson,
+        @createdAt, @queuedAt, @startedAt, @finishedAt, @updatedAt
+      )
+    `).run(this.serializeRun(run));
+  }
+  updateRun(run) {
+    const result = this.db.prepare(`
+      UPDATE agent_task_runs SET
+        status = @status,
+        attempt = @attempt,
+        error_json = @errorJson,
+        result_json = @resultJson,
+        metadata_json = @metadataJson,
+        queued_at = @queuedAt,
+        started_at = @startedAt,
+        finished_at = @finishedAt,
+        updated_at = @updatedAt
+      WHERE id = @id
+    `).run(this.serializeRun(run));
+    if (result.changes === 0) throw new Error(`Agent task run "${run.id}" not found`);
+  }
+  getRun(id) {
+    const row = this.db.prepare("SELECT * FROM agent_task_runs WHERE id = ?").get(id);
+    return row ? this.mapRun(row) : null;
+  }
+  listRuns(options = {}) {
+    const limit = options.limit ?? 100;
+    const rows = options.status ? this.db.prepare("SELECT * FROM agent_task_runs WHERE status = ? ORDER BY created_at DESC, id DESC LIMIT ?").all(options.status, limit) : this.db.prepare("SELECT * FROM agent_task_runs ORDER BY created_at DESC, id DESC LIMIT ?").all(limit);
+    return rows.map((row) => this.mapRun(row));
+  }
+  serializeRun(run) {
+    return {
+      ...run,
+      taskJson: JSON.stringify(run.task),
+      errorJson: run.error ? JSON.stringify(run.error) : null,
+      resultJson: run.result ? JSON.stringify(run.result) : null,
+      metadataJson: JSON.stringify(run.metadata),
+      queuedAt: run.queuedAt ?? null,
+      startedAt: run.startedAt ?? null,
+      finishedAt: run.finishedAt ?? null
+    };
+  }
+  mapAgent(row) {
+    return {
+      id: row.id,
+      role: row.role,
+      model: row.model,
+      providerModel: row.provider_model,
+      systemInstructions: row.system_instructions,
+      timeoutMs: row.timeout_ms,
+      createdAt: row.created_at,
+      updatedAt: row.updated_at
+    };
+  }
+  mapRun(row) {
+    return {
+      id: row.id,
+      agentId: row.agent_id,
+      role: row.role,
+      model: row.model,
+      correlationId: row.correlation_id,
+      status: row.status,
+      task: parseJson(row.task_json, { prompt: "" }),
+      attempt: row.attempt,
+      maxRetries: row.max_retries,
+      timeoutMs: row.timeout_ms,
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+      ...row.queued_at ? { queuedAt: row.queued_at } : {},
+      ...row.started_at ? { startedAt: row.started_at } : {},
+      ...row.finished_at ? { finishedAt: row.finished_at } : {},
+      ...row.error_json ? { error: parseJson(row.error_json, void 0) } : {},
+      ...row.result_json ? { result: parseJson(row.result_json, void 0) } : {},
+      metadata: parseJson(row.metadata_json, {})
+    };
+  }
+};
+
+// src/agents/manager.ts
+import { randomUUID as randomUUID2 } from "crypto";
+function errorDetails(error, attempt) {
+  return {
+    name: error instanceof Error ? error.name : "Error",
+    message: error instanceof Error ? error.message : String(error),
+    attempt,
+    at: (/* @__PURE__ */ new Date()).toISOString()
+  };
+}
+function validateOptions(timeoutMs, maxRetries) {
+  if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) {
+    throw new Error("Execution timeout must be positive");
+  }
+  if (!Number.isInteger(maxRetries) || maxRetries < 0) {
+    throw new Error("maxRetries must be a non-negative integer");
+  }
+}
+var ExecutionManager = class {
+  constructor(registry, store, options = {}) {
+    this.registry = registry;
+    this.store = store;
+    this.defaultMaxRetries = options.maxRetries ?? 0;
+    this.defaultTimeoutMs = options.timeoutMs;
+    validateOptions(this.defaultTimeoutMs ?? 1, this.defaultMaxRetries);
+    this.logger = options.logger ?? new Logger(void 0, "AgentRuntime");
+    this.dispatcher = new TaskDispatcher(options.maxConcurrent ?? 4);
+    for (const agent of registry.list()) store.upsertAgent(agent);
+  }
+  registry;
+  store;
+  dispatcher;
+  logger;
+  defaultMaxRetries;
+  defaultTimeoutMs;
+  managedRuns = /* @__PURE__ */ new Map();
+  activeResults = /* @__PURE__ */ new Map();
+  shuttingDown = false;
+  shutdownPromise;
+  dispatch(agentId, task, options = {}) {
+    if (this.shuttingDown) throw new Error("Execution manager is shutting down");
+    const agent = this.registry.get(agentId);
+    const runId = options.runId ?? randomUUID2();
+    if (this.managedRuns.has(runId) || this.store.getRun(runId)) {
+      throw new Error(`Run "${runId}" already exists`);
+    }
+    const timeoutMs = options.timeoutMs ?? task.timeoutMs ?? this.defaultTimeoutMs ?? agent.timeoutMs;
+    const maxRetries = options.maxRetries ?? this.defaultMaxRetries;
+    validateOptions(timeoutMs, maxRetries);
+    if (!task.prompt.trim()) throw new Error("Agent task prompt must not be empty");
+    const correlationId = options.correlationId ?? task.correlationId ?? randomUUID2();
+    const lifecycle = new RunLifecycle();
+    const managed = {
+      lifecycle,
+      attempts: [],
+      record: {
+        id: runId,
+        agentId,
+        role: agent.role,
+        model: agent.model,
+        correlationId,
+        status: lifecycle.status,
+        task,
+        attempt: 0,
+        maxRetries,
+        timeoutMs,
+        createdAt: lifecycle.createdAt,
+        updatedAt: lifecycle.updatedAt,
+        metadata: { ...task.metadata, ...options.metadata, attempts: [] }
+      }
+    };
+    this.store.upsertAgent(agent);
+    this.store.createRun(managed.record);
+    this.managedRuns.set(runId, managed);
+    this.transition(managed, "queued");
+    return this.enqueue(managed, agent);
+  }
+  async execute(agentId, task, options = {}) {
+    return this.dispatch(agentId, task, options).result;
+  }
+  cancel(runId) {
+    const managed = this.managedRuns.get(runId);
+    if (!managed || !this.activeResults.has(runId)) return false;
+    if (managed.record.status === "queued") {
+      managed.record.error = errorDetails(new AgentCancelledError("Queued agent execution was cancelled"), managed.record.attempt);
+      this.transition(managed, "cancelled");
+      return this.dispatcher.cancel(runId);
+    }
+    if (managed.record.status === "running") {
+      this.logger.info("Cancellation requested", this.logContext(managed));
+      return this.dispatcher.cancel(runId);
+    }
+    return false;
+  }
+  getRun(runId) {
+    return this.managedRuns.get(runId)?.record ?? this.store.getRun(runId);
+  }
+  listRuns(options = {}) {
+    return this.store.listRuns(options);
+  }
+  get activeCount() {
+    return this.dispatcher.activeCount;
+  }
+  get queuedCount() {
+    return this.dispatcher.queuedCount;
+  }
+  /**
+   * Resume work that had not started and mark interrupted running work failed.
+   * Interrupted requests are not replayed automatically to avoid duplicate effects.
+   */
+  recover() {
+    if (this.shuttingDown) throw new Error("Execution manager is shutting down");
+    const result = { resumed: [], interrupted: [] };
+    for (const record of this.store.listRuns({ limit: 1e4 })) {
+      if (this.activeResults.has(record.id)) continue;
+      if (record.status !== "queued" && record.status !== "running") continue;
+      const lifecycle = new RunLifecycle(
+        record.status,
+        record.createdAt,
+        record.updatedAt,
+        record.queuedAt,
+        record.startedAt,
+        record.finishedAt
+      );
+      const attempts = Array.isArray(record.metadata.attempts) ? record.metadata.attempts : [];
+      const managed = { record, lifecycle, attempts };
+      this.managedRuns.set(record.id, managed);
+      if (record.status === "running") {
+        record.error = errorDetails(new Error("Execution interrupted before runtime recovery"), record.attempt);
+        this.transition(managed, "failed");
+        this.managedRuns.delete(record.id);
+        result.interrupted.push(record.id);
+      } else {
+        const agent = this.registry.get(record.agentId);
+        this.enqueue(managed, agent);
+        result.resumed.push(record.id);
+      }
+    }
+    return result;
+  }
+  shutdown(options = {}) {
+    if (this.shutdownPromise) {
+      if (options.cancelRunning) {
+        for (const runId of this.activeResults.keys()) this.cancel(runId);
+      }
+      return this.shutdownPromise;
+    }
+    this.shuttingDown = true;
+    this.dispatcher.stopAccepting();
+    const pending = [...this.activeResults.entries()];
+    for (const [runId] of pending) {
+      const status = this.managedRuns.get(runId)?.record.status;
+      if (status === "queued" || status === "running" && options.cancelRunning) {
+        this.cancel(runId);
+      }
+    }
+    this.shutdownPromise = Promise.allSettled(pending.map(([, result]) => result)).then(() => {
+      this.logger.info("Execution manager shut down", { pendingRuns: pending.length });
+    });
+    return this.shutdownPromise;
+  }
+  enqueue(managed, agent) {
+    const result = this.dispatcher.dispatch(managed.record.id, (signal) => this.executeManaged(managed, agent, signal));
+    this.activeResults.set(managed.record.id, result);
+    const cleanup = () => {
+      this.activeResults.delete(managed.record.id);
+      this.managedRuns.delete(managed.record.id);
+    };
+    void result.then(cleanup, cleanup);
+    return { runId: managed.record.id, correlationId: managed.record.correlationId, result };
+  }
+  async executeManaged(managed, agent, signal) {
+    while (true) {
+      if (signal.aborted) throw new AgentCancelledError();
+      if (managed.record.status === "failed" || managed.record.status === "timed_out") {
+        this.transition(managed, "queued");
+      }
+      this.transition(managed, "running");
+      const attempt = managed.record.attempt + 1;
+      managed.record.attempt = attempt;
+      managed.record.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
+      const attemptStartedAt = (/* @__PURE__ */ new Date()).toISOString();
+      this.save(managed, "Agent attempt started");
+      try {
+        const result = await this.runAttempt(agent, managed, attempt, signal);
+        if (signal.aborted) throw new AgentCancelledError();
+        managed.attempts.push({ attempt, status: "completed", startedAt: attemptStartedAt, finishedAt: (/* @__PURE__ */ new Date()).toISOString() });
+        managed.record.result = result;
+        managed.record.error = void 0;
+        this.transition(managed, "completed");
+        return result;
+      } catch (error) {
+        const cancelled = signal.aborted || error instanceof AgentCancelledError;
+        const timedOut = !cancelled && error instanceof AgentTimeoutError;
+        const status = cancelled ? "cancelled" : timedOut ? "timed_out" : "failed";
+        const runError = errorDetails(
+          cancelled && !(error instanceof Error) ? new AgentCancelledError() : error,
+          attempt
+        );
+        managed.record.error = runError;
+        managed.attempts.push({
+          attempt,
+          status,
+          startedAt: attemptStartedAt,
+          finishedAt: (/* @__PURE__ */ new Date()).toISOString(),
+          error: runError
+        });
+        this.transition(managed, status);
+        if (!cancelled && attempt <= managed.record.maxRetries) {
+          this.logger.warn("Agent attempt failed; retrying", {
+            ...this.logContext(managed),
+            attempt,
+            maxRetries: managed.record.maxRetries,
+            error: runError.message
+          });
+          continue;
+        }
+        throw error;
+      }
+    }
+  }
+  async runAttempt(agent, managed, attempt, signal) {
+    const { record } = managed;
+    const controller = new AbortController();
+    let timeout;
+    let onAbort;
+    const guard = new Promise((_resolve, reject) => {
+      onAbort = () => {
+        const error = signal.reason instanceof AgentCancelledError ? signal.reason : new AgentCancelledError();
+        controller.abort(error);
+        reject(error);
+      };
+      signal.addEventListener("abort", onAbort, { once: true });
+      if (signal.aborted) onAbort();
+      timeout = setTimeout(() => {
+        const error = new AgentTimeoutError(record.timeoutMs);
+        controller.abort(error);
+        reject(error);
+      }, record.timeoutMs);
+    });
+    try {
+      return await Promise.race([
+        agent.run(record.task, {
+          runId: record.id,
+          correlationId: record.correlationId,
+          attempt,
+          timeoutMs: record.timeoutMs,
+          signal: controller.signal
+        }),
+        guard
+      ]);
+    } finally {
+      if (timeout) clearTimeout(timeout);
+      if (onAbort) signal.removeEventListener("abort", onAbort);
+    }
+  }
+  transition(managed, status) {
+    managed.lifecycle.transition(status);
+    managed.record.status = status;
+    managed.record.queuedAt = managed.lifecycle.queuedAt;
+    managed.record.startedAt = managed.lifecycle.startedAt;
+    managed.record.finishedAt = managed.lifecycle.finishedAt;
+    managed.record.updatedAt = managed.lifecycle.updatedAt;
+    this.save(managed, `Run transitioned to ${status}`);
+  }
+  save(managed, message) {
+    managed.record.status = managed.lifecycle.status;
+    managed.record.metadata.attempts = managed.attempts;
+    managed.record.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
+    this.store.updateRun(managed.record);
+    this.logger.debug(message, this.logContext(managed));
+  }
+  logContext(managed) {
+    return {
+      runId: managed.record.id,
+      correlationId: managed.record.correlationId,
+      agentId: managed.record.agentId,
+      role: managed.record.role,
+      status: managed.record.status,
+      attempt: managed.record.attempt
+    };
+  }
+};
 
 // src/utils/worktree.ts
 import { spawn as spawn11 } from "child_process";
@@ -2256,23 +3006,38 @@ async function pruneWorktrees(repoDir) {
 }
 export {
   AdapterRegistry,
+  AgentCancelledError,
+  AgentFactory,
+  AgentRegistry,
+  AgentRuntimeError,
+  AgentRuntimeStore,
+  AgentTimeoutError,
   AiderAdapter,
   CONFIG_FILE_NAME,
   ClaudeCodeAdapter,
   CodexAdapter,
   CustomAdapter,
+  DEFAULT_AGENT_TIMEOUT_MS,
   DEFAULT_CONFIG,
   DaemonManager,
+  ExecutionManager,
   FileLock,
   FleetStore,
+  INITIAL_AGENT_ROLES,
+  InvalidStateTransitionError,
   LEGACY_ENV_FILE_NAME,
   Logger,
+  ModelResolver,
   MvpPipeline,
   OpenCodeAdapter,
   OpenHandsAdapter,
   OtariGateway,
   OtariProviderError,
+  RoleAgent,
+  RunLifecycle,
+  SYSTEM_INSTRUCTIONS,
   StuckDetector,
+  TaskDispatcher,
   chat,
   closeDb,
   commandExists,
@@ -2309,6 +3074,8 @@ export {
   pruneWorktrees,
   readAgentStatusJson,
   removeWorktree,
+  resolveModel,
+  resolveModelSelection,
   resolveProjectsRoot,
   saveConfig,
   setLogVerbosity,

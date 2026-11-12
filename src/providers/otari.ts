@@ -1,5 +1,6 @@
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { Logger } from '../utils/logger.js';
 
 const OTARI_CHAT_URL = 'https://otari.ai/api/v1/chat/completions';
@@ -22,6 +23,8 @@ export interface ChatMessage {
 export interface ChatRequest {
   role: AgentRole;
   messages: ChatMessage[];
+  /** Resolved provider model ID. Omit to resolve the role from models.json. */
+  model?: string;
 }
 
 export interface OtariProviderOptions {
@@ -29,6 +32,7 @@ export interface OtariProviderOptions {
   maxRetries?: number;
   fetch?: typeof fetch;
   logger?: Pick<Logger, 'info'>;
+  signal?: AbortSignal;
 }
 
 export interface OtariTokenUsage {
@@ -74,8 +78,27 @@ export class OtariProviderError extends Error {
   }
 }
 
-function resolveModel(role: AgentRole): string {
-  const configPath = path.resolve(process.cwd(), 'config', 'models.json');
+export interface ResolvedModelSelection {
+  model: string;
+  providerModel: string;
+}
+
+function defaultModelsConfigPath(): string {
+  const cwdConfig = path.resolve(process.cwd(), 'config', 'models.json');
+  if (existsSync(cwdConfig)) return cwdConfig;
+
+  const moduleDir = path.dirname(fileURLToPath(import.meta.url));
+  const packagedCandidates = [
+    path.resolve(moduleDir, '../config/models.json'),
+    path.resolve(moduleDir, '../../config/models.json'),
+  ];
+  return packagedCandidates.find((candidate) => existsSync(candidate)) ?? cwdConfig;
+}
+
+export function resolveModelSelection(
+  role: AgentRole,
+  configPath = defaultModelsConfigPath(),
+): ResolvedModelSelection {
   let config: ModelsConfig;
 
   try {
@@ -94,7 +117,11 @@ function resolveModel(role: AgentRole): string {
     throw new OtariProviderError(`Model "${configuredModel}" is not supported by the Otari provider`);
   }
 
-  return model;
+  return { model: configuredModel, providerModel: model };
+}
+
+export function resolveModel(role: AgentRole, configPath?: string): string {
+  return resolveModelSelection(role, configPath).providerModel;
 }
 
 function isRetryableStatus(status: number): boolean {
@@ -114,8 +141,22 @@ function retryDelayMs(response: Response | undefined, retryNumber: number): numb
   return RETRY_BASE_DELAY_MS * 2 ** retryNumber;
 }
 
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+function sleep(ms: number, signal?: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(new OtariProviderError('Otari request was cancelled'));
+      return;
+    }
+    const timeout = setTimeout(() => {
+      signal?.removeEventListener('abort', onAbort);
+      resolve();
+    }, ms);
+    const onAbort = () => {
+      clearTimeout(timeout);
+      reject(new OtariProviderError('Otari request was cancelled'));
+    };
+    signal?.addEventListener('abort', onAbort, { once: true });
+  });
 }
 
 function parseUsage(usage: OtariApiResponse['usage']): OtariTokenUsage | undefined {
@@ -155,7 +196,7 @@ function parseResponse(data: OtariApiResponse, requestedModel: string): OtariCha
  * OTARI_API_KEY for each request and is never included in logs or errors.
  */
 export async function chat(
-  { role, messages }: ChatRequest,
+  { role, messages, model: requestedModel }: ChatRequest,
   options: OtariProviderOptions = {},
 ): Promise<OtariChatResponse> {
   if (messages.length === 0) {
@@ -167,11 +208,16 @@ export async function chat(
     throw new OtariProviderError('OTARI_API_KEY environment variable is required');
   }
 
-  const model = resolveModel(role);
+  const model = requestedModel ?? resolveModel(role);
   const fetchImpl = options.fetch ?? globalThis.fetch;
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   const maxRetries = options.maxRetries ?? DEFAULT_MAX_RETRIES;
   const logger = options.logger ?? new Logger(undefined, 'Otari');
+  const externalSignal = options.signal;
+
+  if (externalSignal?.aborted) {
+    throw new OtariProviderError('Otari request was cancelled');
+  }
 
   if (!Number.isFinite(timeoutMs) || timeoutMs <= 0 || !Number.isInteger(maxRetries) || maxRetries < 0) {
     throw new OtariProviderError('Timeout must be positive and maxRetries must be a non-negative integer');
@@ -182,6 +228,8 @@ export async function chat(
   for (let attempt = 0; attempt <= maxRetries; attempt += 1) {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), timeoutMs);
+    const onExternalAbort = () => controller.abort();
+    externalSignal?.addEventListener('abort', onExternalAbort, { once: true });
     let retryResponse: Response | undefined;
 
     try {
@@ -225,6 +273,9 @@ export async function chat(
         return result;
       }
     } catch (error) {
+      if (externalSignal?.aborted) {
+        throw new OtariProviderError('Otari request was cancelled');
+      }
       if (error instanceof OtariProviderError && !error.retryable) throw error;
 
       if (error instanceof OtariProviderError) {
@@ -239,10 +290,11 @@ export async function chat(
       }
     } finally {
       clearTimeout(timeout);
+      externalSignal?.removeEventListener('abort', onExternalAbort);
     }
 
     if (attempt < maxRetries && lastError?.retryable) {
-      await sleep(retryDelayMs(retryResponse, attempt));
+      await sleep(retryDelayMs(retryResponse, attempt), externalSignal);
     }
   }
 

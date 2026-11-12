@@ -55,6 +55,10 @@ npx 24x7ai status
 | `npx 24x7ai daemon supervise [dir]` | Run a supervision pass across all active project daemons |
 | `npx 24x7ai adapter list` | Show all detected and installed agent adapters |
 | `npx 24x7ai adapter test <name>` | Test an adapter in the target directory |
+| `npx 24x7ai agents list` | List reusable architect, builder, and tester agents |
+| `npx 24x7ai agents show <id>` | Show a reusable agent definition and resolved model |
+| `npx 24x7ai runs list` | List persisted agent task runs |
+| `npx 24x7ai run status <run-id>` | Show agent task status, attempts, errors, and result |
 | `npx 24x7ai logs [target] [-f]` | Stream or inspect fleet or project logs |
 | `npx 24x7ai set-ideas <csv-or-url>` | Update idea source to a local CSV, URL or Google Sheets |
 | `npx 24x7ai cron [dir]` | Install/update crontab entries for scheduled automation |

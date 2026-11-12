@@ -1,0 +1,324 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Architecture and lifecycle overview of the 24x7ai reusable agent runtime delivered in milestone 002.">
+  <title>24x7ai — Agent Runtime &amp; Lifecycle</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #090d14;
+      --panel: #101722;
+      --panel-2: #141d2a;
+      --line: #263447;
+      --text: #e7edf5;
+      --muted: #9aabbf;
+      --accent: #68e0c0;
+      --accent-2: #8ca7ff;
+      --warm: #f5c96b;
+      --code: #07100f;
+    }
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      background:
+        radial-gradient(circle at 85% 0%, rgba(104, 224, 192, .08), transparent 30rem),
+        radial-gradient(circle at 5% 25%, rgba(140, 167, 255, .07), transparent 28rem),
+        var(--bg);
+      color: var(--text);
+      font: 16px/1.65 Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+    a { color: var(--accent); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    code, pre { font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace; }
+    code { color: #b8f4df; font-size: .9em; }
+    .mermaid {
+      display: block;
+      min-height: 120px;
+      margin-top: 1.5rem;
+      text-align: center;
+      background: #0b111a;
+    }
+    .mermaid:not([data-processed="true"]) { text-align: left; white-space: pre-wrap; }
+    pre {
+      padding: 1.25rem;
+      overflow-x: auto;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: var(--code);
+      color: #c8d6e5;
+      font-size: .86rem;
+      line-height: 1.65;
+    }
+    .shell { width: min(1180px, calc(100% - 2rem)); margin: 0 auto; }
+    header { padding: 5rem 0 3rem; border-bottom: 1px solid var(--line); }
+    .eyebrow, .section-label {
+      color: var(--accent);
+      text-transform: uppercase;
+      letter-spacing: .15em;
+      font-size: .74rem;
+      font-weight: 800;
+    }
+    h1 { margin: .75rem 0 1rem; max-width: 940px; font-size: clamp(2.35rem, 6vw, 4.7rem); line-height: 1.05; letter-spacing: -.055em; }
+    h1 span { color: var(--accent); }
+    h2 { margin: .3rem 0 .7rem; font-size: clamp(1.7rem, 3vw, 2.35rem); line-height: 1.2; letter-spacing: -.025em; }
+    h3 { margin: 0 0 .5rem; font-size: 1.05rem; }
+    p { margin: .45rem 0 1rem; }
+    .lead { max-width: 800px; margin: 0; color: var(--muted); font-size: 1.12rem; }
+    .meta { display: flex; flex-wrap: wrap; gap: .65rem; margin-top: 1.75rem; }
+    .pill { padding: .3rem .7rem; border: 1px solid var(--line); border-radius: 99px; color: var(--muted); background: rgba(16, 23, 34, .75); font-size: .78rem; }
+    nav { padding: 1.25rem 0; border-bottom: 1px solid var(--line); }
+    nav ul { display: flex; flex-wrap: wrap; gap: .5rem 1.35rem; padding: 0; margin: 0; list-style: none; font-size: .85rem; }
+    nav a { color: var(--muted); }
+    main { padding: 1rem 0 3rem; }
+    section { padding: 3rem 0; border-bottom: 1px solid var(--line); }
+    section:last-child { border-bottom: 0; }
+    .section-label { color: var(--accent-2); }
+    .section-intro { max-width: 800px; color: var(--muted); }
+    .grid { display: grid; gap: 1rem; margin-top: 1.5rem; }
+    .grid.three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .grid.two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .card { padding: 1.35rem; border: 1px solid var(--line); border-radius: 14px; background: linear-gradient(145deg, var(--panel-2), var(--panel)); }
+    .card p { color: var(--muted); font-size: .92rem; }
+    .card p:last-child { margin-bottom: 0; }
+    .number { display: block; margin-bottom: .8rem; color: var(--accent); font: 700 .75rem/1 monospace; letter-spacing: .1em; }
+    .path { display: block; margin-top: .85rem; color: var(--accent-2); font: .77rem/1.5 "SFMono-Regular", Consolas, monospace; overflow-wrap: anywhere; }
+    .callout { margin-top: 1.25rem; padding: 1rem 1.2rem; border-left: 3px solid var(--accent); border-radius: 0 10px 10px 0; background: rgba(104, 224, 192, .055); color: var(--muted); }
+    .callout strong { color: var(--text); }
+    .callout.warn { border-color: var(--warm); background: rgba(245, 201, 107, .055); }
+    .table-wrap { margin-top: 1.5rem; overflow-x: auto; border: 1px solid var(--line); border-radius: 12px; }
+    table { width: 100%; border-collapse: collapse; min-width: 690px; background: var(--panel); }
+    th, td { padding: .85rem 1rem; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
+    th { color: var(--muted); background: var(--panel-2); font-size: .73rem; text-transform: uppercase; letter-spacing: .08em; }
+    td { font-size: .88rem; }
+    td:last-child { color: var(--muted); }
+    tr:last-child td { border-bottom: 0; }
+    .checks { display: grid; grid-template-columns: repeat(4, 1fr); gap: .75rem; margin-top: 1.4rem; }
+    .check { padding: 1rem; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); }
+    .check b { display: block; color: var(--accent); font-size: .86rem; }
+    .check span { color: var(--muted); font-size: .8rem; }
+    footer { padding: 2rem 0 3rem; color: var(--muted); font-size: .82rem; }
+    footer .shell { display: flex; justify-content: space-between; gap: 1rem; flex-wrap: wrap; }
+    @media (max-width: 800px) {
+      .grid.three, .grid.two { grid-template-columns: 1fr; }
+      .checks { grid-template-columns: repeat(2, 1fr); }
+      header { padding-top: 3.5rem; }
+    }
+    @media (max-width: 450px) { .checks { grid-template-columns: 1fr; } }
+    @media print {
+      :root { color-scheme: light; --bg: #fff; --panel: #fff; --panel-2: #f5f7fa; --line: #ccd5df; --text: #15202b; --muted: #526274; --accent: #08775e; --accent-2: #365db8; --code: #f3f6f8; }
+      body { background: white; }
+      header { padding-top: 2rem; }
+      nav { display: none; }
+      section { break-inside: avoid; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="shell">
+      <div class="eyebrow">Architecture briefing · Milestone 002</div>
+      <h1>Reusable <span>agent runtime</span> &amp; lifecycle</h1>
+      <p class="lead">Independent architect, builder, and tester agents execute through Otari with bounded concurrency, enforced state transitions, retries, cancellation, timeouts, structured results, and persistent run history.</p>
+      <div class="meta">
+        <span class="pill">Kimi K3.1 Pro · all initial roles</span>
+        <span class="pill">Bounded task dispatcher</span>
+        <span class="pill">SQLite run recovery</span>
+        <span class="pill">52 tests passing</span>
+      </div>
+    </div>
+  </header>
+
+  <nav>
+    <div class="shell">
+      <ul>
+        <li><a href="#architecture">Architecture</a></li>
+        <li><a href="#lifecycle">Lifecycle</a></li>
+        <li><a href="#execution">Execution</a></li>
+        <li><a href="#persistence">Persistence &amp; CLI</a></li>
+        <li><a href="#verification">Verification</a></li>
+      </ul>
+    </div>
+  </nav>
+
+  <main class="shell">
+    <section id="architecture">
+      <div class="section-label">01 · Big picture</div>
+      <h2>Provider logic stays separate from orchestration</h2>
+      <p class="section-intro">The factory resolves role models and constructs agents. The registry supplies agent identities, while the execution manager owns runs and delegates bounded scheduling to the dispatcher. Only the role agent talks to the Otari provider.</p>
+      <pre class="mermaid" aria-label="Milestone 002 agent runtime architecture">
+flowchart LR
+  Caller["Application / API consumer"] --> Manager["ExecutionManager<br/>run IDs · retries · timeout · cancel"]
+  Factory["AgentFactory"] --> Resolver["ModelResolver<br/>config/models.json"]
+  Factory --> Registry["AgentRegistry"]
+  Registry --> Architect["Architect<br/>structured plan"]
+  Registry --> Builder["Builder<br/>implementation result"]
+  Registry --> Tester["Tester<br/>test report"]
+  Manager --> Registry
+  Manager --> Dispatcher["TaskDispatcher<br/>max concurrent + queue"]
+  Dispatcher --> Architect
+  Dispatcher --> Builder
+  Dispatcher --> Tester
+  Architect --> Provider["Otari provider<br/>src/providers/otari.ts"]
+  Builder --> Provider
+  Tester --> Provider
+  Provider --> Otari["Otari chat completions<br/>Kimi K3.1 Pro"]
+  Manager <--> Store["AgentRuntimeStore"]
+  Store <--> DB[("SQLite fleet.db<br/>definitions + task runs")]
+  Store --> CLI["Inspection CLI<br/>agents · runs · run status"]
+
+  classDef agent fill:#142b30,stroke:#68e0c0,color:#e7edf5;
+  classDef core fill:#1b2940,stroke:#8ca7ff,color:#e7edf5;
+  classDef state fill:#2b2418,stroke:#f5c96b,color:#e7edf5;
+  class Architect,Builder,Tester agent;
+  class Manager,Factory,Resolver,Registry,Dispatcher,Provider,CLI core;
+  class Store,DB state;
+      </pre>
+      <div class="grid three">
+        <article class="card"><span class="number">DEFINE</span><h3>Agent abstraction</h3><p>Each agent has a unique ID, logical role, logical and provider model IDs, system instructions, timeout, and a reusable <code>run(task, context)</code> contract.</p><span class="path">src/agents/types.ts · agent.ts · factory.ts</span></article>
+        <article class="card"><span class="number">CONTROL</span><h3>Execution manager</h3><p>Creates durable run records, coordinates guarded attempts, captures errors and results, enforces retry limits, and exposes cancellation and graceful shutdown.</p><span class="path">src/agents/manager.ts · dispatcher.ts</span></article>
+        <article class="card"><span class="number">CONNECT</span><h3>Existing Otari adapter</h3><p>The runtime reuses the direct provider from milestone 001. External abort signals now cancel requests and retry backoff without logging credentials.</p><span class="path">src/providers/otari.ts</span></article>
+      </div>
+    </section>
+
+    <section id="lifecycle">
+      <div class="section-label">02 · State machine</div>
+      <h2>Every transition is explicit and validated</h2>
+      <p class="section-intro"><code>RunLifecycle</code> rejects illegal transitions. Failed and timed-out attempts may return to queued only while retries remain. Completed and cancelled runs are terminal; exhausted failures and timeouts remain in their respective states.</p>
+      <pre class="mermaid" aria-label="Agent run lifecycle state diagram">
+stateDiagram-v2
+  [*] --> idle: run record created
+  idle --> queued: dispatched
+  idle --> cancelled: cancellation
+  queued --> running: worker available
+  queued --> cancelled: cancel queued work
+  running --> completed: structured result
+  running --> failed: execution error
+  running --> timed_out: attempt deadline
+  running --> cancelled: abort signal
+  failed --> queued: retries remaining
+  timed_out --> queued: retries remaining
+  completed --> [*]
+  failed --> [*]: retries exhausted
+  timed_out --> [*]: retries exhausted
+  cancelled --> [*]
+      </pre>
+      <div class="grid three">
+        <article class="card"><h3>Attempt history</h3><p>Each attempt records its number, start/end timestamps, final status, and sanitized error. A retry keeps the same run and correlation IDs.</p></article>
+        <article class="card"><h3>Timeout &amp; cancellation</h3><p>Each attempt has its own abort controller and deadline. Cooperative agents receive an abort signal; Otari requests propagate it to <code>fetch</code>.</p></article>
+        <article class="card"><h3>Cleanup</h3><p>Timers and abort listeners are removed after every attempt. Terminal in-memory state is released while the durable SQLite record remains queryable.</p></article>
+      </div>
+    </section>
+
+    <section id="execution">
+      <div class="section-label">03 · Request path</div>
+      <h2>A durable run before any model request</h2>
+      <pre class="mermaid" aria-label="Agent execution sequence">
+sequenceDiagram
+  autonumber
+  participant App as Application
+  participant Mgr as ExecutionManager
+  participant DB as AgentRuntimeStore
+  participant Queue as TaskDispatcher
+  participant Agent as RoleAgent
+  participant Otari as Otari provider
+
+  App->>Mgr: dispatch(agentId, task, options)
+  Mgr->>DB: Persist idle run, then queued
+  Mgr->>Queue: Enqueue one run ID
+  Queue-->>App: ExecutionHandle + result promise
+  Queue->>Mgr: Start when capacity is available
+  Mgr->>DB: running + attempt metadata
+  Mgr->>Agent: run(task, run context + abort signal)
+  Agent->>Otari: Resolved model + system/user messages
+  alt Successful response
+    Otari-->>Agent: Content + optional usage
+    Agent-->>Mgr: Structured role-specific result
+    Mgr->>DB: completed + result + timestamps
+  else Failure or timeout with retries left
+    Mgr->>DB: failed/timed_out attempt
+    Mgr->>DB: queued, then running retry
+  else Cancellation or retries exhausted
+    Mgr->>DB: Terminal status + captured error
+  end
+      </pre>
+      <div class="callout"><strong>No uncontrolled parallelism:</strong> the dispatcher starts only as many jobs as <code>maxConcurrent</code> allows. Queued shutdown work is cancelled, while running work may finish normally or be explicitly cancelled.</div>
+      <div class="callout warn"><strong>Recovery policy:</strong> queued records are safe to resume. A record left in <code>running</code> after restart is marked failed instead of replayed, avoiding duplicate side effects. Recovery is a startup operation, not distributed scheduling.</div>
+    </section>
+
+    <section id="persistence">
+      <div class="section-label">04 · State &amp; operator access</div>
+      <h2>Independent runtime records in the existing database</h2>
+      <p class="section-intro">The new tables coexist with the project-oriented tables from the original fleet. Existing project pipelines and adapter runs retain their schema and behavior.</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Record / command</th><th>Purpose</th><th>Implementation</th></tr></thead>
+          <tbody>
+            <tr><td><code>agent_definitions</code></td><td>Stable ID, role, logical/provider models, instructions, timeout, and update timestamps.</td><td><code>AgentRuntimeStore.upsertAgent</code></td></tr>
+            <tr><td><code>agent_task_runs</code></td><td>Task JSON, status, attempts, IDs, timing, errors, structured result, and execution metadata.</td><td><code>AgentRuntimeStore.createRun / updateRun</code></td></tr>
+            <tr><td><code>agents list</code></td><td>Instantiate and list the three configured runtime agents.</td><td>Supports <code>--json</code> and <code>--dir</code>.</td></tr>
+            <tr><td><code>agents show &lt;id&gt;</code></td><td>Inspect model routing, instructions, and timeout for one agent.</td><td>No model API request.</td></tr>
+            <tr><td><code>runs list</code></td><td>List recent durable task runs and their statuses.</td><td>Supports limit and JSON output.</td></tr>
+            <tr><td><code>run status &lt;run-id&gt;</code></td><td>Inspect attempts, errors, timestamps, and output without invoking the MVP pipeline.</td><td>Nested under the existing <code>run</code> command.</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <pre aria-label="Agent runtime source tree">src/agents/
+├── agent.ts           RoleAgent + role-specific system instructions
+├── dispatcher.ts      Bounded queue + per-job AbortController
+├── errors.ts          Timeout, cancellation, and transition errors
+├── factory.ts         Initial architect/builder/tester creation
+├── lifecycle.ts       Valid state-transition table and timestamps
+├── manager.ts         Dispatch, retries, cancellation, recovery, shutdown
+├── model-resolver.ts  Logical role to configured/provider model selection
+├── registry.ts        Unique agent registration and lookup
+├── store.ts           SQLite definitions and task-run persistence
+└── types.ts           Agent, task, result, run, and logging contracts</pre>
+    </section>
+
+    <section id="verification">
+      <div class="section-label">05 · Verified state</div>
+      <h2>Milestone 002 acceptance checks</h2>
+      <div class="checks">
+        <div class="check"><b>✓ TypeScript</b><span>Strict type check passes</span></div>
+        <div class="check"><b>✓ Tests</b><span>52 tests across 8 files</span></div>
+        <div class="check"><b>✓ Build</b><span>CLI and library bundles generated</span></div>
+        <div class="check"><b>✓ Regression</b><span>Milestone 001 tests remain green</span></div>
+      </div>
+      <div class="grid two">
+        <article class="card"><h3>Mocked behavior coverage</h3><p>Creation, role model resolution, successful Otari execution, failures, timeout, cancellation, invalid transitions, retry limits, duplicate IDs, concurrency, persistence, recovery, late registration, dispatcher cleanup, and graceful shutdown.</p><span class="path">tests/agent-runtime.test.ts · tests/otari-provider.test.ts</span></article>
+        <article class="card"><h3>Deliberate boundary</h3><p>The runtime provides the reusable execution primitive. Full autonomous architect → builder → tester workflows, distributed scheduling, and milestone 003 behavior are not implemented.</p><span class="path">CLI inspection commands perform no billable model calls</span></article>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <div class="shell">
+      <span>24x7ai · Universal Agent Fleet Controller</span>
+      <span>Milestone 002 · <code>milestones/2.html</code></span>
+    </div>
+  </footer>
+  <script type="module">
+    import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+    mermaid.initialize({
+      startOnLoad: true,
+      securityLevel: 'strict',
+      theme: 'dark',
+      themeVariables: {
+        background: '#0b111a',
+        primaryColor: '#141d2a',
+        primaryTextColor: '#e7edf5',
+        primaryBorderColor: '#68e0c0',
+        lineColor: '#8ca7ff',
+        secondaryColor: '#1b2940',
+        tertiaryColor: '#101722',
+        fontFamily: 'Inter, system-ui, sans-serif'
+      },
+      flowchart: { curve: 'basis', htmlLabels: true },
+      sequence: { useMaxWidth: true }
+    });
+  </script>
+</body>
+</html>

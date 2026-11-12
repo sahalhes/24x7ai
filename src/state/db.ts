@@ -70,9 +70,43 @@ export function initDb(dbPath: string): Database.Database {
       updated_at TEXT DEFAULT (datetime('now'))
     );
 
+    CREATE TABLE IF NOT EXISTS agent_definitions (
+      id TEXT PRIMARY KEY,
+      role TEXT NOT NULL CHECK(role IN ('architect', 'builder', 'tester')),
+      model TEXT NOT NULL,
+      provider_model TEXT NOT NULL,
+      system_instructions TEXT NOT NULL,
+      timeout_ms INTEGER NOT NULL CHECK(timeout_ms > 0),
+      created_at TEXT DEFAULT (datetime('now')),
+      updated_at TEXT DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS agent_task_runs (
+      id TEXT PRIMARY KEY,
+      agent_id TEXT NOT NULL REFERENCES agent_definitions(id) ON DELETE CASCADE,
+      role TEXT NOT NULL CHECK(role IN ('architect', 'builder', 'tester')),
+      model TEXT NOT NULL,
+      correlation_id TEXT NOT NULL,
+      status TEXT NOT NULL CHECK(status IN ('idle','queued','running','completed','failed','cancelled','timed_out')),
+      task_json TEXT NOT NULL,
+      attempt INTEGER NOT NULL DEFAULT 0,
+      max_retries INTEGER NOT NULL DEFAULT 0 CHECK(max_retries >= 0),
+      timeout_ms INTEGER NOT NULL CHECK(timeout_ms > 0),
+      error_json TEXT,
+      result_json TEXT,
+      metadata_json TEXT NOT NULL DEFAULT '{}',
+      created_at TEXT NOT NULL,
+      queued_at TEXT,
+      started_at TEXT,
+      finished_at TEXT,
+      updated_at TEXT NOT NULL
+    );
+
     CREATE INDEX IF NOT EXISTS idx_projects_sl_no ON projects(sl_no);
     CREATE INDEX IF NOT EXISTS idx_agent_runs_project_id ON agent_runs(project_id);
     CREATE INDEX IF NOT EXISTS idx_daemon_state_status ON daemon_state(status);
+    CREATE INDEX IF NOT EXISTS idx_agent_task_runs_status ON agent_task_runs(status);
+    CREATE INDEX IF NOT EXISTS idx_agent_task_runs_correlation ON agent_task_runs(correlation_id);
   `);
 
   return db;

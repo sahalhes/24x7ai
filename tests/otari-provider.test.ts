@@ -152,6 +152,22 @@ describe('Otari chat provider', () => {
     )).rejects.toThrow('Otari request timed out after 5ms');
   });
 
+  it('honors external cancellation without retrying', async () => {
+    const controller = new AbortController();
+    const fetchMock = vi.fn().mockImplementation((_url, request) => new Promise((_resolve, reject) => {
+      request.signal.addEventListener('abort', () => reject(new Error('aborted')), { once: true });
+    }));
+
+    const request = chat(
+      { role: 'builder', messages },
+      { fetch: fetchMock, signal: controller.signal, maxRetries: 3 },
+    );
+    controller.abort();
+
+    await expect(request).rejects.toThrow('Otari request was cancelled');
+    expect(fetchMock).toHaveBeenCalledOnce();
+  });
+
   it('rejects malformed successful responses', async () => {
     const fetchMock = vi.fn().mockResolvedValue(successResponse({ choices: [] }));
     await expect(chat(
